@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Favicon Generator</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #0f172a;
+            font-family: system-ui;
+        }
+        .container {
+            text-align: center;
+            color: white;
+        }
+        canvas {
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0 8px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .info {
+            margin-top: 20px;
+            color: #94a3b8;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>The Newspaper - Favicon Generator</h1>
+        <p style="color: #94a3b8; margin-bottom: 10px;">Clean "TN" logo for browser tabs</p>
+        <canvas id="favicon" width="512" height="512"></canvas>
+        <div>
+            <button onclick="downloadFavicon()">Download favicon.ico</button>
+            <button onclick="downloadPNG()">Download PNG</button>
+        </div>
+        <div class="info">
+            Right-click the canvas above to save, or use the buttons to download.<br>
+            Save as favicon.ico and place in your /public folder.
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('favicon');
+        const ctx = canvas.getContext('2d');
+
+        // Draw background gradient
+        const gradient = ctx.createLinearGradient(0, 0, 512, 512);
+        gradient.addColorStop(0, '#3b82f6');
+        gradient.addColorStop(1, '#1d4ed8');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Add subtle rounded corners
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.beginPath();
+        ctx.roundRect(0, 0, 512, 512, 64);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+
+        // Draw "TN" letters
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 280px system-ui';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('TN', 256, 256);
+
+        function downloadFavicon() {
+            canvas.toBlob(function(blob) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'favicon.ico';
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
+
+        function downloadPNG() {
+            const url = canvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'newspaper-logo.png';
+            a.click();
+        }
+    </script>
+</body>
+</html>

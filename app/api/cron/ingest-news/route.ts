@@ -113,42 +113,32 @@ export async function GET(req: NextRequest) {
         // Check when we last ingested
         const lastArticle = await Article.findOne().sort({ createdAt: -1 }).select("createdAt").lean();
         const now = new Date();
-        const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-        // If we ingested within last 2 hours, skip
-        if (lastArticle && lastArticle.createdAt > twoHoursAgo) {
+        // If we ingested within last 24 hours, skip
+        if (lastArticle && lastArticle.createdAt > twentyFourHoursAgo) {
             return NextResponse.json({
                 status: "skipped",
                 message: "News was updated recently",
                 lastUpdate: lastArticle.createdAt,
-                nextUpdate: new Date(lastArticle.createdAt.getTime() + 2 * 60 * 60 * 1000),
+                nextUpdate: new Date(lastArticle.createdAt.getTime() + 24 * 60 * 60 * 1000),
             });
         }
 
-        // MAXIMIZED FREE TIER USAGE:
-        // Every 2 hours = 12 runs/day
-        // NewsAPI: 12 calls/day (well under 100/day limit)
-        // NYT: 12-36 calls/day (well under 500/day limit)
+        // OPTIMIZED FOR VERCEL HOBBY PLAN (1 run per day):
+        // Daily run = 1 run/day
+        // NewsAPI: 1 call/day (well under 100/day limit)
+        // NYT: 3 calls/day (well under 500/day limit)
 
-        // Rotate NYT sections to get variety throughout the day
-        const hour = now.getHours();
+        // Fetch max articles in our single daily run
         const allSections = [
-            "business", "technology", "world", "science",
-            "health", "sports", "arts", "opinion"
-        ];
-
-        // Pick 2-3 sections based on hour for variety
-        const sectionIndex = Math.floor(hour / 3) % allSections.length;
-        const sections = [
-            allSections[sectionIndex],
-            allSections[(sectionIndex + 1) % allSections.length],
-            allSections[(sectionIndex + 2) % allSections.length],
+            "business", "technology", "world"
         ];
 
         // Fetch from all sources - MAX articles per call
         const [newsRaw, ...nytResults] = await Promise.all([
             fetchNewsApi(100).catch(() => []), // 1 call - 100 articles (max allowed)
-            ...sections.map(section => fetchNYT(section, 50).catch(() => [])), // 3 calls - 50 each
+            ...allSections.map(section => fetchNYT(section, 50).catch(() => [])), // 3 calls - 50 each
         ]);
 
         const nytRaw = nytResults.flat();
@@ -180,7 +170,7 @@ export async function GET(req: NextRequest) {
                 matched: result?.matchedCount ?? 0,
                 modified: result?.modifiedCount ?? 0,
             },
-            nextUpdate: new Date(now.getTime() + 2 * 60 * 60 * 1000),
+            nextUpdate: new Date(now.getTime() + 24 * 60 * 60 * 1000),
         });
     } catch (e: unknown) {
         return NextResponse.json(

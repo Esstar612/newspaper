@@ -128,17 +128,22 @@ export async function GET(req: NextRequest) {
         // OPTIMIZED FOR VERCEL HOBBY PLAN (1 run per day):
         // Daily run = 1 run/day
         // NewsAPI: 1 call/day (well under 100/day limit)
-        // NYT: 3 calls/day (well under 500/day limit)
+        // NYT: 6 calls/day (well under 500/day limit - still only 1.2%!)
 
-        // Fetch max articles in our single daily run
+        // Fetch from multiple sections for variety in single daily run
         const allSections = [
-            "business", "technology", "world"
+            "business",    // 50 articles
+            "technology",  // 50 articles
+            "world",       // 50 articles
+            "science",     // 50 articles
+            "health",      // 50 articles
+            "sports"       // 50 articles
         ];
 
         // Fetch from all sources - MAX articles per call
         const [newsRaw, ...nytResults] = await Promise.all([
             fetchNewsApi(100).catch(() => []), // 1 call - 100 articles (max allowed)
-            ...allSections.map(section => fetchNYT(section, 50).catch(() => [])), // 3 calls - 50 each
+            ...allSections.map(section => fetchNYT(section, 50).catch(() => [])), // 6 calls - 50 each
         ]);
 
         const nytRaw = nytResults.flat();

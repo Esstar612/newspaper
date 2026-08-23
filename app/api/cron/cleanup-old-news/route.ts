@@ -2,21 +2,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
+import { MIN_KEEP, RETENTION_MS, planCleanup } from "@/lib/cleanup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Cleanup Strategy:
- * - Keep articles from last 7 days (fresh and relevant)
- * - Delete anything older than 7 days
- * - Runs daily at 3 AM UTC
+ * Cleanup strategy:
+ * - Delete articles older than 7 days, so the collection does not grow forever.
+ * - But never at the cost of emptying the site.
  *
- * Database size estimate:
- * - ~2,000 articles/day ingested
- * - Keep 7 days = ~14,000 articles max
- * - Average article size: ~1KB
- * - Total DB size: ~14MB (very manageable!)
+ * This job and the ingest run independently, and Vercel documents cron delivery
+ * as best effort with no retry on failure. Deleting purely on an age cutoff meant
+ * that if ingest stopped working — a dead feed, a missed run, an expired key —
+ * this job would keep deleting on schedule and the site would be empty within a
+ * week, with nothing to indicate why. Two guards prevent that.
  */
 
 export async function GET(req: NextRequest) {
@@ -32,23 +32,45 @@ export async function GET(req: NextRequest) {
         await connectDB();
 
         const now = new Date();
-        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const cutoff = new Date(now.getTime() - RETENTION_MS);
 
-        // Count articles before cleanup
         const totalBefore = await Article.countDocuments();
-        const oldArticlesCount = await Article.countDocuments({
-            createdAt: { $lt: sevenDaysAgo }
-        });
+        const newestArticle = await Article.findOne()
+            .sort({ createdAt: -1 })
+            .select("createdAt")
+            .lean();
 
-        // Delete old articles
-        const deleteResult = await Article.deleteMany({
-            createdAt: { $lt: sevenDaysAgo }
-        });
+        const plan = planCleanup({ total: totalBefore, newestAt: newestArticle?.createdAt, now });
 
-        // Get DB stats after cleanup
+        if (plan.action === "skip") {
+            return NextResponse.json({
+                status: "skipped",
+                reason: plan.reason,
+                message: plan.message,
+                timestamp: now,
+                newestArticle: newestArticle?.createdAt ?? null,
+                totalArticles: totalBefore,
+            });
+        }
+
+        // Oldest first, capped by the budget, so the newest MIN_KEEP always survive
+        // even if every one of them is past the retention cutoff.
+        const expired = await Article.find({ createdAt: { $lt: cutoff } })
+            .sort({ createdAt: 1 })
+            .limit(plan.budget)
+            .select("_id")
+            .lean();
+
+        const deleteResult = expired.length
+            ? await Article.deleteMany({ _id: { $in: expired.map((d) => d._id) } })
+            : { deletedCount: 0 };
+
+        const oldExpiredCount = await Article.countDocuments({ createdAt: { $lt: cutoff } });
         const totalAfter = await Article.countDocuments();
-        const oldestArticle = await Article.findOne().sort({ createdAt: 1 }).select("createdAt").lean();
-        const newestArticle = await Article.findOne().sort({ createdAt: -1 }).select("createdAt").lean();
+        const oldestArticle = await Article.findOne()
+            .sort({ createdAt: 1 })
+            .select("createdAt")
+            .lean();
 
         return NextResponse.json({
             status: "success",
@@ -57,17 +79,15 @@ export async function GET(req: NextRequest) {
                 totalBefore,
                 totalAfter,
                 deleted: deleteResult.deletedCount,
-                oldArticlesFound: oldArticlesCount,
+                // Left behind because deleting them would have breached the floor.
+                keptPastRetention: oldExpiredCount,
+                floor: MIN_KEEP,
             },
             database: {
                 currentArticles: totalAfter,
                 oldestArticle: oldestArticle?.createdAt,
                 newestArticle: newestArticle?.createdAt,
                 retentionDays: 7,
-            },
-            estimatedSize: {
-                articles: totalAfter,
-                approxSizeMB: Math.round((totalAfter * 1) / 1024), // ~1KB per article
             },
         });
     } catch (e: unknown) {

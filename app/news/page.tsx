@@ -3,17 +3,16 @@
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CATEGORIES, GENERAL, LABELS, isCategory } from "@/lib/categories";
-
-type Article = {
-    _id?: string;
-    title: string;
-    description?: string;
-    url: string;
-    imageUrl?: string;
-    source: string;
-    publishedAt?: string;
-    tags?: string[];
-};
+import { ArticleCard, type Article } from "@/components/ArticleCard";
+import {
+    Button,
+    EmptyState,
+    ErrorBanner,
+    Icon,
+    PageHeader,
+    Skeleton,
+    cn,
+} from "@/components/ui";
 
 type NewsResponse = {
     articles: Article[];
@@ -30,48 +29,34 @@ const COUNTRY_CODES: Record<string, string> = {
     "FR": "fr", "France": "fr",
 };
 
-/** Inline SVG, so a missing image never depends on a third-party host being alive. */
-const PLACEHOLDER_IMAGE =
-    "data:image/svg+xml;utf8," +
-    encodeURIComponent(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200">
-            <rect width="400" height="200" fill="#0f172a"/>
-            <text x="200" y="104" fill="#334155" font-family="system-ui,sans-serif"
-                  font-size="48" text-anchor="middle">&#9632;</text>
-        </svg>`.replace(/\s+/g, " ")
+const PANEL_ID = "news-results";
+
+function ArticleSkeletons() {
+    return (
+        <div aria-busy="true" aria-label="Loading articles" className="space-y-8">
+            <div className="grid gap-5 overflow-hidden rounded-lg border border-line bg-surface md:grid-cols-2">
+                <Skeleton className="aspect-[16/10] rounded-none md:h-full" />
+                <div className="space-y-3 p-8">
+                    <Skeleton className="h-3 w-32" />
+                    <Skeleton className="h-8 w-full" />
+                    <Skeleton className="h-8 w-3/4" />
+                    <Skeleton className="h-4 w-full" />
+                </div>
+            </div>
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }, (_, i) => (
+                    <div key={i} className="overflow-hidden rounded-lg border border-line bg-surface">
+                        <Skeleton className="aspect-[16/9] rounded-none" />
+                        <div className="space-y-2.5 p-4">
+                            <Skeleton className="h-3 w-24" />
+                            <Skeleton className="h-5 w-full" />
+                            <Skeleton className="h-4 w-2/3" />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
     );
-
-const RELATIVE_UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ["year", 365 * 24 * 60 * 60 * 1000],
-    ["month", 30 * 24 * 60 * 60 * 1000],
-    ["day", 24 * 60 * 60 * 1000],
-    ["hour", 60 * 60 * 1000],
-    ["minute", 60 * 1000],
-];
-
-function relativeTime(iso?: string): string {
-    if (!iso) return "";
-    const then = new Date(iso).getTime();
-    if (Number.isNaN(then)) return "";
-
-    const diff = then - Date.now();
-    const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-
-    for (const [unit, ms] of RELATIVE_UNITS) {
-        if (Math.abs(diff) >= ms) return formatter.format(Math.round(diff / ms), unit);
-    }
-    return "just now";
-}
-
-/** Cut on a word boundary instead of appending "..." to everything, short text included. */
-function truncate(text: string | undefined, max: number): string {
-    if (!text) return "";
-    const clean = text.trim();
-    if (clean.length <= max) return clean;
-
-    const cut = clean.slice(0, max);
-    const lastSpace = cut.lastIndexOf(" ");
-    return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}\u2026`;
 }
 
 function NewsPageInner() {
@@ -249,368 +234,218 @@ function NewsPageInner() {
         }
     };
 
+    // Hierarchy: one lead, then a standard grid, then a compact tail. A page of 20
+    // equally-weighted tiles reads as a wall; a front page leads with something.
+    const searching = Boolean(searchQuery);
+    const [lead, ...rest] = articles;
+    const featured = searching ? articles : rest.slice(0, 9);
+    const compact = searching ? [] : rest.slice(9);
 
     return (
-        <div style={{ minHeight: "100vh", backgroundColor: "#0f172a" }}>
+        <div className="min-h-screen">
+            <div className="mx-auto max-w-page px-4 py-8 sm:px-6">
+                <PageHeader
+                    title="Latest News"
+                    subtitle="Top stories from the New York Times and the BBC"
+                />
 
-            {/* Page Header */}
-            <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "2rem 1.5rem 1.5rem" }}>
-                <h1 style={{ fontSize: "32px", fontWeight: 700, color: "white", margin: "0 0 0.5rem 0" }}>
-                    Latest News
-                </h1>
-                <p style={{ fontSize: "16px", color: "#94a3b8", margin: 0 }}>
-                    Stay informed with top stories from around the world
-                </p>
-            </div>
-
-            {/* Control Bar */}
-            <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 1.5rem 2rem" }}>
-                <div style={{ backgroundColor: "#1e293b", borderRadius: "12px", padding: "1rem", border: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap", justifyContent: "space-between" }}>
-                    {/* Categories */}
+                {/* Category strip + search */}
+                <div className="mb-6 flex flex-col gap-3 border-y border-line py-3 sm:flex-row sm:items-center sm:gap-4">
+                    {/*
+                     * A scrollable row, not a wrapping one. At 390px these tabs used to
+                     * collapse into a ragged three-row block with the search button
+                     * stranded in the middle of it.
+                     */}
                     <div
                         ref={tabsRef}
                         role="tablist"
                         aria-label="News categories"
                         onKeyDown={handleTabKeyDown}
-                        style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", flex: 1 }}
+                        className="no-scrollbar -mx-1 flex min-w-0 flex-1 gap-1 overflow-x-auto px-1"
                     >
-                        {CATEGORIES.map((cat) => (
-                            <button
-                                key={cat}
-                                role="tab"
-                                data-category={cat}
-                                aria-selected={activeCategory === cat}
-                                tabIndex={activeCategory === cat ? 0 : -1}
-                                onClick={() => selectCategory(cat)}
-                                style={{
-                                    backgroundColor: activeCategory === cat ? "#3b82f6" : "transparent",
-                                    color: activeCategory === cat ? "white" : "#94a3b8",
-                                    border: "none",
-                                    outlineOffset: "2px",
-                                    cursor: "pointer",
-                                    padding: "8px 16px",
-                                    borderRadius: "8px",
-                                    fontSize: "14px",
-                                    fontWeight: 600,
-                                    transition: "all 0.2s",
-                                }}
-                                onMouseOver={(e) => {
-                                    if (activeCategory !== cat) {
-                                        e.currentTarget.style.backgroundColor = "#334155";
-                                    }
-                                }}
-                                onMouseOut={(e) => {
-                                    if (activeCategory !== cat) {
-                                        e.currentTarget.style.backgroundColor = "transparent";
-                                    }
-                                }}
-                            >
-                                {LABELS[cat] ?? cat}
-                            </button>
-                        ))}
+                        {CATEGORIES.map((cat) => {
+                            const active = activeCategory === cat;
+                            return (
+                                <button
+                                    key={cat}
+                                    role="tab"
+                                    data-category={cat}
+                                    aria-selected={active}
+                                    aria-controls={PANEL_ID}
+                                    tabIndex={active ? 0 : -1}
+                                    onClick={() => selectCategory(cat)}
+                                    className={cn(
+                                        "shrink-0 rounded px-3 py-1.5 text-base font-semibold transition-colors",
+                                        active
+                                            ? "bg-accent-strong text-accent-ink"
+                                            : "text-ink-muted hover:bg-raised hover:text-ink"
+                                    )}
+                                >
+                                    {LABELS[cat] ?? cat}
+                                </button>
+                            );
+                        })}
                     </div>
 
-                    {/* Search + Dev Controls */}
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <div className="flex shrink-0 items-center gap-2">
                         {searchExpanded ? (
-                            <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                            <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+                                <label htmlFor="news-search" className="sr-only">
+                                    Search articles
+                                </label>
                                 <input
+                                    id="news-search"
                                     type="text"
                                     value={tempSearchQuery}
                                     onChange={(e) => setTempSearchQuery(e.target.value)}
-                                    placeholder="Search..."
+                                    placeholder="Search articles…"
                                     autoFocus
-                                    style={{
-                                        width: "250px",
-                                        padding: "8px 12px",
-                                        borderRadius: "8px",
-                                        border: "1px solid rgba(255,255,255,0.1)",
-                                        backgroundColor: "#0f172a",
-                                        color: "white",
-                                        fontSize: "14px",
-                                        outline: "none",
-                                    }}
+                                    className="h-9 w-full min-w-0 rounded border border-line bg-raised px-3 text-base text-ink placeholder:text-ink-subtle sm:w-56"
                                 />
-                                <button
-                                    type="submit"
-                                    style={{
-                                        backgroundColor: "#3b82f6",
-                                        color: "white",
-                                        border: "none",
-                                        padding: "8px 16px",
-                                        borderRadius: "8px",
-                                        cursor: "pointer",
-                                        fontSize: "14px",
-                                        fontWeight: 600,
-                                    }}
-                                >
+                                <Button type="submit" size="sm">
                                     Go
-                                </button>
-                                <button
+                                </Button>
+                                <Button
                                     type="button"
+                                    variant="ghost"
+                                    size="sm"
                                     onClick={toggleSearch}
-                                    style={{
-                                        backgroundColor: "transparent",
-                                        color: "#94a3b8",
-                                        border: "none",
-                                        padding: "8px",
-                                        cursor: "pointer",
-                                        fontSize: "16px",
-                                    }}
+                                    aria-label="Close search"
+                                    className="px-2"
                                 >
-                                    ✕
-                                </button>
+                                    <Icon name="close" size={16} />
+                                </Button>
                             </form>
                         ) : (
-                            <button
+                            <Button
+                                variant={searchQuery ? "primary" : "secondary"}
+                                size="sm"
                                 onClick={toggleSearch}
-                                style={{
-                                    backgroundColor: searchQuery ? "#3b82f6" : "#334155",
-                                    color: "white",
-                                    border: "none",
-                                    width: "36px",
-                                    height: "36px",
-                                    borderRadius: "8px",
-                                    cursor: "pointer",
-                                    fontSize: "16px",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    transition: "all 0.2s",
-                                }}
-                                title={searchQuery ? `Searching: ${searchQuery}` : "Search"}
+                                aria-label={searchQuery ? `Searching: ${searchQuery}` : "Search articles"}
+                                className="px-2.5"
                             >
-                                🔍
-                            </button>
+                                <Icon name="search" size={16} />
+                            </Button>
                         )}
 
                         {isDev && (
-                            <button
+                            <Button
+                                variant="secondary"
+                                size="sm"
                                 onClick={ingestNow}
                                 disabled={loading}
-                                style={{
-                                    backgroundColor: "#10b981",
-                                    color: "white",
-                                    border: "none",
-                                    padding: "8px 12px",
-                                    borderRadius: "8px",
-                                    cursor: loading ? "not-allowed" : "pointer",
-                                    fontSize: "14px",
-                                    fontWeight: 600,
-                                    opacity: loading ? 0.5 : 1,
-                                }}
+                                aria-label="Ingest articles (development only)"
+                                className="px-2.5"
                             >
-                                📰
-                            </button>
+                                <Icon name="refresh" size={16} />
+                            </Button>
                         )}
                     </div>
                 </div>
 
-                {/* Status */}
-                {(searchQuery || articles.length > 0) && (
-                    <div style={{ marginTop: "1rem", fontSize: "14px", color: "#64748b" }}>
-                        {searchQuery ? (
+                {/* Result summary */}
+                {!loading && (articles.length > 0 || searching) && (
+                    <p className="mb-5 text-sm text-ink-muted">
+                        {searching ? (
                             <>
-                                <span style={{ color: "white", fontWeight: 600 }}>{articles.length}</span> results for &quot;{searchQuery}&quot; in {LABELS[activeCategory] ?? activeCategory}
+                                <span className="font-semibold text-ink">{articles.length}</span>{" "}
+                                {articles.length === 1 ? "result" : "results"} for{" "}
+                                <span className="text-ink">&ldquo;{searchQuery}&rdquo;</span> in{" "}
+                                {LABELS[activeCategory] ?? activeCategory}
                                 <button
                                     onClick={handleClearSearch}
-                                    style={{
-                                        marginLeft: "12px",
-                                        backgroundColor: "transparent",
-                                        color: "#64748b",
-                                        border: "1px solid rgba(255,255,255,0.1)",
-                                        padding: "4px 12px",
-                                        borderRadius: "6px",
-                                        cursor: "pointer",
-                                        fontSize: "12px",
-                                        fontWeight: 600,
-                                    }}
+                                    className="ml-3 rounded border border-line px-2 py-0.5 text-xs font-semibold text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
                                 >
                                     Clear
                                 </button>
                             </>
                         ) : (
                             <>
-                                <span style={{ color: "white", fontWeight: 600 }}>{LABELS[activeCategory] ?? activeCategory}</span>
-                                {articles.length > 0 && ` • ${articles.length} articles`}
+                                <span className="font-semibold text-ink">
+                                    {LABELS[activeCategory] ?? activeCategory}
+                                </span>{" "}
+                                · {articles.length} articles
                             </>
                         )}
-                    </div>
+                    </p>
                 )}
-            </div>
 
-            {/* Content */}
-            <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 1.5rem 3rem" }}>
-                {/* Skeletons mirror the real card layout, so the grid does not jump on load. */}
-                {loading && !loadingMore && (
-                    <div
-                        aria-busy="true"
-                        aria-label="Loading articles"
-                        style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1.5rem", marginBottom: "3rem" }}
-                    >
-                        {Array.from({ length: 6 }, (_, i) => (
-                            <div
-                                key={i}
-                                style={{
-                                    backgroundColor: "#1e293b",
-                                    borderRadius: "12px",
-                                    border: "1px solid rgba(255,255,255,0.1)",
-                                    overflow: "hidden",
-                                }}
+                <div id={PANEL_ID} role="tabpanel" aria-label={LABELS[activeCategory] ?? activeCategory}>
+                    {loading && !loadingMore && <ArticleSkeletons />}
+
+                    {error && !loading && (
+                        <ErrorBanner
+                            title="Could not load articles"
+                            message={error}
+                            onRetry={() => fetchArticles(activeCategory, searchQuery)}
+                        />
+                    )}
+
+                    {!loading && !error && articles.length === 0 && (
+                        <EmptyState
+                            icon={<Icon name="news" size={40} />}
+                            title={
+                                searching
+                                    ? `No results for “${searchQuery}”`
+                                    : `Nothing in ${LABELS[activeCategory] ?? activeCategory} right now`
+                            }
+                            hint={
+                                searching
+                                    ? "Try a different search term, or clear the search."
+                                    : "This section refreshes daily — try another category."
+                            }
+                        />
+                    )}
+
+                    {!loading && articles.length > 0 && (
+                        <div className="space-y-8">
+                            {!searching && lead && <ArticleCard article={lead} variant="lead" />}
+
+                            {featured.length > 0 && (
+                                <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                                    {featured.map((article) => (
+                                        <ArticleCard
+                                            key={article._id ?? article.url}
+                                            article={article}
+                                            variant="feature"
+                                        />
+                                    ))}
+                                </div>
+                            )}
+
+                            {compact.length > 0 && (
+                                <section aria-label="In brief">
+                                    <h2 className="mb-1 border-b-2 border-line-strong pb-2 font-serif text-2xl font-semibold text-ink">
+                                        In brief
+                                    </h2>
+                                    {/* Columns keep a long tail readable; a single
+                                        column of 20+ headlines just looked unfinished. */}
+                                    <div className="grid gap-x-8 sm:grid-cols-2 lg:grid-cols-3">
+                                        {compact.map((article) => (
+                                            <ArticleCard
+                                                key={article._id ?? article.url}
+                                                article={article}
+                                                variant="compact"
+                                            />
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+                        </div>
+                    )}
+
+                    {articles.length > 0 && nextCursor && (
+                        <div className="mt-10 text-center">
+                            <Button
+                                onClick={() => fetchArticles(activeCategory, searchQuery, nextCursor, true)}
+                                disabled={loadingMore}
+                                variant="secondary"
                             >
-                                <div style={{ height: "200px", backgroundColor: "#243044" }} />
-                                <div style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "10px" }}>
-                                    <div style={{ height: "10px", width: "35%", borderRadius: "4px", backgroundColor: "#243044" }} />
-                                    <div style={{ height: "14px", width: "92%", borderRadius: "4px", backgroundColor: "#243044" }} />
-                                    <div style={{ height: "14px", width: "70%", borderRadius: "4px", backgroundColor: "#243044" }} />
-                                    <div style={{ height: "10px", width: "100%", borderRadius: "4px", backgroundColor: "#1c2739" }} />
-                                    <div style={{ height: "10px", width: "80%", borderRadius: "4px", backgroundColor: "#1c2739" }} />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {error && (
-                    <div
-                        role="alert"
-                        style={{ padding: "20px", margin: "0 auto 20px", maxWidth: "600px", backgroundColor: "#991b1b20", color: "#fca5a5", borderRadius: "12px", textAlign: "center", border: "1px solid #991b1b40" }}
-                    >
-                        <div style={{ fontWeight: 600, marginBottom: "6px" }}>Could not load articles</div>
-                        <div style={{ fontSize: "14px", marginBottom: "14px" }}>{error}</div>
-                        <button
-                            onClick={() => fetchArticles(activeCategory, searchQuery)}
-                            style={{
-                                backgroundColor: "transparent",
-                                color: "#fca5a5",
-                                border: "1px solid #991b1b60",
-                                padding: "6px 16px",
-                                borderRadius: "6px",
-                                cursor: "pointer",
-                                fontSize: "13px",
-                                fontWeight: 600,
-                            }}
-                        >
-                            Try again
-                        </button>
-                    </div>
-                )}
-
-                <div style={{ display: loading && !loadingMore ? "none" : "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1.5rem", marginBottom: "3rem" }}>
-                    {articles.map((article) => (
-                        <article
-                            key={article._id ?? article.url}
-                            style={{
-                                backgroundColor: "#1e293b",
-                                borderRadius: "12px",
-                                border: "1px solid rgba(255,255,255,0.1)",
-                                overflow: "hidden",
-                                display: "flex",
-                                flexDirection: "column",
-                                transition: "all 0.2s",
-                                cursor: "pointer",
-                            }}
-                            onMouseOver={(e) => {
-                                e.currentTarget.style.transform = "translateY(-4px)";
-                                e.currentTarget.style.borderColor = "#3b82f6";
-                            }}
-                            onMouseOut={(e) => {
-                                e.currentTarget.style.transform = "translateY(0)";
-                                e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
-                            }}
-                        >
-                            <div style={{ width: "100%", height: "200px", overflow: "hidden", backgroundColor: "#0f172a" }}>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                    src={article.imageUrl || PLACEHOLDER_IMAGE}
-                                    alt=""
-                                    loading="lazy"
-                                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                    onError={(e) => {
-                                        const img = e.currentTarget;
-                                        // Guard against a loop if the placeholder itself ever fails.
-                                        if (img.src !== PLACEHOLDER_IMAGE) img.src = PLACEHOLDER_IMAGE;
-                                    }}
-                                />
-                            </div>
-                            <div style={{ padding: "1.25rem", display: "flex", flexDirection: "column", flex: 1 }}>
-                                <div style={{ fontSize: "11px", color: "#3b82f6", fontWeight: 600, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                                    <span>{article.source}</span>
-                                    {/* `tags?.length &&` renders a literal 0 when tags is empty. */}
-                                    {article.tags && article.tags.length > 0 ? (
-                                        <span style={{ color: "#64748b" }}>• {LABELS[article.tags[0]] ?? article.tags[0]}</span>
-                                    ) : null}
-                                    {relativeTime(article.publishedAt) ? (
-                                        <span style={{ color: "#64748b", textTransform: "none", fontWeight: 500 }}>
-                                            • {relativeTime(article.publishedAt)}
-                                        </span>
-                                    ) : null}
-                                </div>
-                                <h2 style={{ fontWeight: 600, color: "white", fontSize: "16px", lineHeight: "1.4", margin: "0 0 0.75rem 0" }}>{article.title}</h2>
-                                <p style={{ color: "#94a3b8", fontSize: "14px", lineHeight: "1.5", flex: 1, margin: "0 0 1rem 0" }}>
-                                    {truncate(article.description, 140)}
-                                </p>
-                                <a
-                                    href={article.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                        textDecoration: "none",
-                                        color: "#3b82f6",
-                                        fontSize: "14px",
-                                        fontWeight: 600,
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "4px",
-                                    }}
-                                >
-                                    Read article →
-                                </a>
-                            </div>
-                        </article>
-                    ))}
+                                {loadingMore ? "Loading…" : "Load more"}
+                            </Button>
+                        </div>
+                    )}
                 </div>
-
-                {!loading && !error && articles.length === 0 && (
-                    <div style={{ textAlign: "center", padding: "80px 20px", color: "#64748b" }}>
-                        <div style={{ fontSize: "48px", marginBottom: "1rem" }}>📰</div>
-                        <p style={{ fontSize: "18px", marginBottom: "10px", color: "white", fontWeight: 600 }}>
-                            {searchQuery
-                                ? `No results for "${searchQuery}"`
-                                : `Nothing in ${LABELS[activeCategory] ?? activeCategory} right now`}
-                        </p>
-                        <p style={{ fontSize: "14px" }}>
-                            {searchQuery
-                                ? "Try a different search term, or clear the search."
-                                : isDev
-                                    ? "Click 📰 to ingest articles."
-                                    : "This section refreshes daily - try another category."}
-                        </p>
-                    </div>
-                )}
-
-                {articles.length > 0 && nextCursor && (
-                    <div style={{ textAlign: "center" }}>
-                        <button
-                            onClick={() => fetchArticles(activeCategory, searchQuery, nextCursor, true)}
-                            disabled={loadingMore}
-                            style={{
-                                backgroundColor: "#3b82f6",
-                                color: "white",
-                                border: "none",
-                                padding: "12px 32px",
-                                borderRadius: "8px",
-                                cursor: loadingMore ? "not-allowed" : "pointer",
-                                fontSize: "14px",
-                                fontWeight: 600,
-                                opacity: loadingMore ? 0.5 : 1,
-                                transition: "all 0.2s",
-                            }}
-                        >
-                            {loadingMore ? "Loading..." : "Load more"}
-                        </button>
-                    </div>
-                )}
             </div>
         </div>
     );
@@ -618,7 +453,7 @@ function NewsPageInner() {
 
 export default function NewsPage() {
     return (
-        <Suspense fallback={<div style={{ minHeight: "100vh", backgroundColor: "#0f172a" }} />}>
+        <Suspense fallback={<div className="min-h-screen" />}>
             <NewsPageInner />
         </Suspense>
     );

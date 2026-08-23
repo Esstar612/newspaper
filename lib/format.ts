@@ -45,9 +45,11 @@ export function truncate(text: string | undefined, max: number): string {
 export const PLACEHOLDER_IMAGE =
     "data:image/svg+xml;utf8," +
     encodeURIComponent(
+        // No background fill: a data URI cannot read CSS variables, so the element's
+        // own bg-raised shows through and the placeholder works in either theme.
         `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="225" viewBox="0 0 400 225">
-            <rect width="400" height="225" fill="#1c2636"/>
-            <g fill="none" stroke="#3d4a5f" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <g fill="none" stroke="#8b98ac" stroke-opacity="0.5" stroke-width="2.5"
+               stroke-linecap="round" stroke-linejoin="round">
                 <rect x="164" y="94" width="72" height="52" rx="4"/>
                 <path d="M164 132l18-18 14 14 11-11 29 29"/>
             </g>

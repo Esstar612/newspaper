@@ -86,10 +86,13 @@ export default function TemperatureBarGraph({ data }: TemperatureBarGraphProps) 
                         />
                         <Legend
                             wrapperStyle={{ color: "var(--ink)" }}
-                            formatter={() => "Temperature"}
+                            formatter={(value: string) => (
+                                <span style={{ color: "var(--ink)" }}>{value}</span>
+                            )}
                         />
                         <Bar
                             dataKey="temp"
+                            name="Temperature (°C)"
                             fill="var(--accent)"
                             radius={[8, 8, 0, 0]}
                         />

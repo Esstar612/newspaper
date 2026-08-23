@@ -42,11 +42,9 @@ async function getArticles(): Promise<Article[]> {
 }
 
 async function getQuotes(): Promise<Quote[]> {
-    try {
-        return await fetchQuotes();
-    } catch {
-        return [];
-    }
+    // fetchQuotes never throws; an empty list simply hides the strip.
+    const { quotes } = await fetchQuotes();
+    return quotes;
 }
 
 function MarketsStrip({ quotes }: { quotes: Quote[] }) {

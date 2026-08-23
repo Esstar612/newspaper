@@ -48,6 +48,7 @@ export default function StocksPage() {
     const [loadingQuotes, setLoadingQuotes] = useState(true);
     const [loadingChart, setLoadingChart] = useState(true);
     const [error, setError] = useState("");
+    const [stale, setStale] = useState(false);
     const [notice, setNotice] = useState("");
 
     // Every symbol in one cached request — see app/api/stocks/watchlist/route.ts.
@@ -57,8 +58,18 @@ export default function StocksPage() {
         try {
             const res = await fetch("/api/stocks/watchlist");
             const data = await res.json();
-            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-            setQuotes(data.quotes ?? []);
+
+            // The route answers 200 with stale data and 503 only when there is
+            // nothing at all to show.
+            if (data?.quotes?.length) {
+                setQuotes(data.quotes);
+                setStale(Boolean(data.stale));
+                if (!data.stale) setError("");
+            } else {
+                setQuotes([]);
+                setStale(false);
+                throw new Error(data?.error || `HTTP ${res.status}`);
+            }
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to load quotes");
         } finally {
@@ -167,9 +178,23 @@ export default function StocksPage() {
                         <ErrorBanner tone="warn" title="Heads up" message={notice} />
                     </div>
                 )}
-                {error && (
+                {error && quotes.length === 0 && (
                     <div className="mb-5">
-                        <ErrorBanner title="Could not load market data" message={error} onRetry={loadQuotes} />
+                        <ErrorBanner
+                            title="Live market data is unavailable"
+                            message={`${error}. Prices will return automatically once the provider responds.`}
+                            onRetry={loadQuotes}
+                        />
+                    </div>
+                )}
+
+                {stale && quotes.length > 0 && (
+                    <div className="mb-5">
+                        <ErrorBanner
+                            tone="warn"
+                            title="Showing last known prices"
+                            message="The market data provider is not responding, so these figures may be out of date."
+                        />
                     </div>
                 )}
 
@@ -227,6 +252,10 @@ export default function StocksPage() {
                                     <Skeleton key={i} className="h-9 w-full" />
                                 ))}
                             </div>
+                        ) : quotes.length === 0 ? (
+                            <p className="px-4 py-10 text-center text-base text-ink-subtle">
+                                No prices to show right now.
+                            </p>
                         ) : (
                             <ul className="divide-y divide-line">
                                 {quotes.map((q) => (

@@ -84,6 +84,16 @@ export default function StocksPage() {
 
     useEffect(() => {
         let cancelled = false;
+
+        // Only chart a symbol we actually have a quote for. Firing this while the
+        // provider is failing spends a second upstream request to draw nothing —
+        // and each request risks another 5-minute IP block.
+        if (loadingQuotes || !quotes.some((q) => q.symbol === selected)) {
+            setPoints([]);
+            setLoadingChart(loadingQuotes);
+            return;
+        }
+
         (async () => {
             setLoadingChart(true);
             try {
@@ -99,7 +109,7 @@ export default function StocksPage() {
         return () => {
             cancelled = true;
         };
-    }, [selected, range]);
+    }, [selected, range, quotes, loadingQuotes]);
 
     useEffect(() => {
         let cancelled = false;
@@ -154,7 +164,7 @@ export default function StocksPage() {
     return (
         <div className="min-h-screen">
             <div className="mx-auto max-w-page px-4 py-8 sm:px-6">
-                <PageHeader title="Markets" subtitle="Live prices with currency conversion" />
+                <PageHeader title="Markets" subtitle="Delayed prices with currency conversion" />
 
                 <div className="mb-6 flex flex-wrap items-end gap-3 border-y border-line py-3">
                     <SelectField

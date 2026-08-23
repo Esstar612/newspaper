@@ -9,7 +9,14 @@ import { NextResponse } from "next/server";
 import { fetchQuotes } from "@/lib/stocks";
 
 export const runtime = "nodejs";
-export const revalidate = 60;
+// 5 minutes, matching the provider's own window.
+//
+// marketdata.app permits one active IP per account and blocks for 5 minutes when
+// it sees IP switching inside a 5-minute window. Vercel runs each request on a
+// lambda with a rotating outbound IP, so the defence is to call rarely: one
+// upstream request per 5 minutes regardless of traffic, which is less often than
+// the old click-to-fetch page managed under a single user.
+export const revalidate = 300;
 
 export async function GET() {
     const result = await fetchQuotes(revalidate);

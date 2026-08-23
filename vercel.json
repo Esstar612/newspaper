@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/cleanup-old-news",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-candles",
+      "schedule": "0 2 * * *"
     }
   ]
 }

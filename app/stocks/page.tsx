@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { NAME_BY_SYMBOL, RANGE_KEYS, type Quote, type Range } from "@/lib/stocks";
-import { compactNumber, money, percent } from "@/lib/format";
+import { compactNumber, money, percent, relativeTime } from "@/lib/format";
 import {
-    Button,
     Card,
     ErrorBanner,
     Icon,
@@ -22,6 +21,32 @@ const PriceChart = dynamic(() => import("@/components/PriceChart").then((m) => m
     loading: () => <Skeleton className="h-64 w-full sm:h-72" />,
 });
 
+
+/** Matches the watchlist route's own revalidate window; refetching sooner just re-renders identical numbers. */
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_KEY = "watchlist:v1";
+
+type CachedQuotes = { quotes: Quote[]; at: number };
+
+function readCache(): CachedQuotes | null {
+    try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as CachedQuotes;
+        return Array.isArray(parsed?.quotes) && parsed.quotes.length ? parsed : null;
+    } catch {
+        // Private mode, disabled storage, or a stale shape — fall back to fetching.
+        return null;
+    }
+}
+
+function writeCache(quotes: Quote[]) {
+    try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ quotes, at: Date.now() }));
+    } catch {
+        // Non-fatal: the page works without the cache, it just reloads each visit.
+    }
+}
 
 function Change({ value, pct }: { value: number | null; pct: number | null }) {
     if (pct === null && value === null) return <span className="text-ink-subtle">—</span>;
@@ -46,15 +71,19 @@ export default function StocksPage() {
     const [chartError, setChartError] = useState("");
     const [refreshChart, setRefreshChart] = useState(0);
     const [asOf, setAsOf] = useState<string | null>(null);
+    // Starts false: the cached paint below usually beats any network call.
     const [loadingQuotes, setLoadingQuotes] = useState(true);
     const [loadingChart, setLoadingChart] = useState(true);
     const [error, setError] = useState("");
     const [stale, setStale] = useState(false);
+    const [fetchedAt, setFetchedAt] = useState<number | null>(null);
     const [notice, setNotice] = useState("");
 
     // Every symbol in one cached request — see app/api/stocks/watchlist/route.ts.
-    const loadQuotes = useCallback(async () => {
-        setLoadingQuotes(true);
+    const loadQuotes = useCallback(async ({ background = false } = {}) => {
+        // A background refresh keeps the existing rows on screen rather than
+        // replacing them with skeletons; only a cold load has nothing to show.
+        if (!background) setLoadingQuotes(true);
         setError("");
         try {
             const res = await fetch("/api/stocks/watchlist");
@@ -65,7 +94,13 @@ export default function StocksPage() {
             if (data?.quotes?.length) {
                 setQuotes(data.quotes);
                 setStale(Boolean(data.stale));
+                setFetchedAt(Date.now());
+                writeCache(data.quotes);
                 if (!data.stale) setError("");
+            } else if (background) {
+                // Keep whatever is already on screen; a failed background refresh
+                // should not wipe good rows.
+                setError(data?.error || `HTTP ${res.status}`);
             } else {
                 setQuotes([]);
                 setStale(false);
@@ -78,9 +113,25 @@ export default function StocksPage() {
         }
     }, []);
 
-    // Auto-loads: the page used to show "Select a Stock" until you clicked a button.
+    /*
+     * Paint from the last known prices immediately, and only go to the network if
+     * they are older than the route's own cache window.
+     *
+     * Re-fetching from scratch on every visit showed skeletons for data that had
+     * not changed — /api/stocks/watchlist is cached server-side for 5 minutes, so
+     * a fresh visit inside that window was re-rendering identical numbers.
+     */
     useEffect(() => {
-        loadQuotes();
+        const cached = readCache();
+
+        if (cached) {
+            setQuotes(cached.quotes);
+            setFetchedAt(cached.at);
+            setLoadingQuotes(false);
+        }
+
+        const age = cached ? Date.now() - cached.at : Infinity;
+        if (age > CACHE_TTL_MS) loadQuotes({ background: Boolean(cached) });
     }, [loadQuotes]);
 
     useEffect(() => {
@@ -188,10 +239,6 @@ export default function StocksPage() {
                             <option key={c} value={c}>{c}</option>
                         ))}
                     </SelectField>
-                    <Button variant="secondary" onClick={loadQuotes} disabled={loadingQuotes}>
-                        <Icon name="refresh" size={16} />
-                        Refresh
-                    </Button>
                 </div>
 
                 {notice && !error && (
@@ -288,9 +335,30 @@ export default function StocksPage() {
 
                     {/* Watchlist */}
                     <Card className="order-1 lg:order-2" padded={false}>
-                        <h2 className="border-b border-line px-4 py-3 font-serif text-xl font-semibold text-ink">
-                            Watchlist
-                        </h2>
+                        <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+                            <h2 className="font-serif text-xl font-semibold text-ink">Watchlist</h2>
+                            <div className="flex items-center gap-2">
+                                {fetchedAt && (
+                                    <span className="text-2xs uppercase tracking-wide text-ink-subtle">
+                                        {relativeTime(new Date(fetchedAt).toISOString())}
+                                    </span>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => loadQuotes({ background: quotes.length > 0 })}
+                                    disabled={loadingQuotes}
+                                    aria-label="Refresh prices"
+                                    title="Refresh prices"
+                                    className={cn(
+                                        "grid h-8 w-8 place-items-center rounded text-ink-muted",
+                                        "transition-colors hover:bg-raised hover:text-ink",
+                                        "disabled:cursor-not-allowed disabled:opacity-50"
+                                    )}
+                                >
+                                    <Icon name="refresh" size={16} />
+                                </button>
+                            </div>
+                        </div>
                         {loadingQuotes ? (
                             <div className="space-y-3 p-4">
                                 {Array.from({ length: 8 }, (_, i) => (

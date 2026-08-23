@@ -9,9 +9,6 @@ export const revalidate = 3600;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Statuses worth retrying: the intermittent origin block, rate limits, and 5xx. */
-const RETRYABLE = new Set([403, 408, 429, 500, 502, 503, 504]);
-
 const RANGES: Record<string, number> = {
     "1m": 31,
     "3m": 93,
@@ -41,13 +38,7 @@ export async function GET(
             `https://api.marketdata.app/v1/stocks/candles/D/${encodeURIComponent(symbol)}/` +
             `?from=${iso(from)}&to=${iso(to)}&token=${token}`;
 
-        // Same transient origin block as the quotes endpoint; retry rather than
-        // making the reader click.
-        let res = await fetch(url, { next: { revalidate } });
-        for (let i = 0; i < 2 && !res.ok && RETRYABLE.has(res.status); i++) {
-            await new Promise((r) => setTimeout(r, 300 * (i + 1)));
-            res = await fetch(url, { cache: "no-store" });
-        }
+        const res = await fetch(url, { next: { revalidate } });
         if (!res.ok) throw new Error(`History lookup failed (HTTP ${res.status})`);
 
         const raw = await res.json();

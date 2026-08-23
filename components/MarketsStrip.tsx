@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { Quote } from "@/lib/stocks";
+import { useQuotes } from "@/lib/useQuotes";
 import { money, percent } from "@/lib/format";
 import { cn } from "@/components/ui";
 
@@ -17,29 +16,14 @@ import { cn } from "@/components/ui";
  * Reading /api/stocks/watchlist instead means the route handler's own 5-minute
  * cache actually applies, the homepage renders news immediately, and a market
  * data outage can neither slow nor break the front page.
+ *
+ * Quote loading is shared with the watchlist via useQuotes, so the ticker paints
+ * from the last known prices on arrival rather than refetching on every visit —
+ * and the two surfaces read the same cache, so opening the front page and then
+ * /stocks does not fetch twice.
  */
 export function MarketsStrip() {
-    const [quotes, setQuotes] = useState<Quote[]>([]);
-
-    useEffect(() => {
-        let cancelled = false;
-
-        (async () => {
-            try {
-                const res = await fetch("/api/stocks/watchlist");
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled && Array.isArray(data.quotes)) setQuotes(data.quotes);
-            } catch {
-                // A ticker that fails should simply not appear. It is decoration on a
-                // news front page, not a status panel.
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+    const { quotes } = useQuotes();
 
     if (quotes.length === 0) return null;
 

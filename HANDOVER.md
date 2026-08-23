@@ -5,7 +5,7 @@ Working doc for whoever picks this up. Approved plan lives at
 
 **Last updated:** 2026-08-23
 **Branch:** `redesign/phase-1-foundation` (branched from `main` @ `96dd730`)
-**State:** All three phases implemented and verified.
+**State:** All three phases implemented and verified. **Nothing committed yet.**
 
 ---
 
@@ -127,6 +127,24 @@ become a Server Component once the hover handlers are gone.
 
 ---
 
+### Theme gotchas
+
+10. **The class on `<html>` is the source of truth, not React state.** The inline script sets it
+    before React exists, so the toggle uses `useSyncExternalStore` reading the DOM. Do not
+    "simplify" this to `useState` + `useEffect` — that reintroduces a setState-in-effect lint
+    error *and* a stale second copy of the theme.
+
+11. **`suppressHydrationWarning` on `<html>` is required**, because the script mutates the class
+    before hydration.
+
+12. **Recharts colours legend and pie-label text with the series/slice colour.** That is invisible
+    on a light card (Snow `#e2e8f0` is 1.23:1 on white). All three charts now render legend labels
+    and pie labels as explicit token-coloured elements. Related: giving a series a `name` is what
+    keeps the legend from falling back to the raw `dataKey` ("temp", "humidity").
+
+13. **Data-URI SVGs cannot read CSS variables.** The article placeholder therefore has *no*
+    background fill — the element's own `bg-raised` shows through, so it works in both themes.
+
 ---
 
 ## How to verify
@@ -200,8 +218,9 @@ category · currency dropdown has ~30 options · `BRK.A` converts · weather aut
 
 ## Open items / judgement calls left
 
-- **Light mode has tokens but no toggle yet.** The `.light` class is defined and AA-verified;
-  nothing sets it. Plan flags the toggle as the easiest thing to cut.
+- ~~Light mode has tokens but no toggle~~ **DONE.** `components/ThemeToggle.tsx` + an inline
+  `THEME_INIT_SCRIPT` in `<head>`. Precedence: stored choice > OS `prefers-color-scheme` > dark.
+  It follows the OS live until the user makes an explicit choice.
 - **Weather page gradient hazard (pre-existing):** `app/weather/page.tsx` sets a data-driven
   background, some gradients light (`fog`, `snow`), with hardcoded white text over them. Should be
   resolved by the token work rather than carried forward.

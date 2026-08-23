@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon, cn } from "@/components/ui";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type Props = {
     userCountry?: string;
@@ -39,12 +40,15 @@ export default function Header({ userCountry, showLocation = false }: Props) {
                         </span>
                     </Link>
 
-                    {showLocation && userCountry ? (
-                        <span className="flex items-center gap-1.5 text-sm text-ink-muted sm:hidden">
-                            <Icon name="location" size={15} />
-                            <span className="font-semibold uppercase">{userCountry}</span>
-                        </span>
-                    ) : null}
+                    <div className="flex items-center gap-2 sm:hidden">
+                        {showLocation && userCountry ? (
+                            <span className="flex items-center gap-1.5 text-sm text-ink-muted">
+                                <Icon name="location" size={15} />
+                                <span className="font-semibold uppercase">{userCountry}</span>
+                            </span>
+                        ) : null}
+                        <ThemeToggle />
+                    </div>
                 </div>
 
                 <nav
@@ -71,12 +75,15 @@ export default function Header({ userCountry, showLocation = false }: Props) {
                     })}
                 </nav>
 
-                {showLocation && userCountry ? (
-                    <span className="ml-auto hidden items-center gap-1.5 text-sm text-ink-muted sm:flex">
-                        <Icon name="location" size={15} />
-                        <span className="font-semibold uppercase">{userCountry}</span>
-                    </span>
-                ) : null}
+                <div className="ml-auto hidden items-center gap-3 sm:flex">
+                    {showLocation && userCountry ? (
+                        <span className="flex items-center gap-1.5 text-sm text-ink-muted">
+                            <Icon name="location" size={15} />
+                            <span className="font-semibold uppercase">{userCountry}</span>
+                        </span>
+                    ) : null}
+                    <ThemeToggle />
+                </div>
             </div>
         </header>
     );

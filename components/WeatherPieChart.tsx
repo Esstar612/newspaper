@@ -69,9 +69,20 @@ const WeatherPieChart: React.FC<WeatherPieChartProps> = ({ data }) => {
                   cx="50%"
                   cy="50%"
                   outerRadius={150}
-                  label={(entry) => {
-                    const percentage = total ? ((entry.value / total) * 100).toFixed(1) : 0;
-                    return `${entry.name} (${percentage}%)`;
+                  label={(props: any) => {
+                    const percentage = total ? ((props.value / total) * 100).toFixed(1) : 0;
+                    return (
+                        <text
+                            x={props.x}
+                            y={props.y}
+                            textAnchor={props.textAnchor}
+                            dominantBaseline="central"
+                            fill="var(--ink-muted)"
+                            fontSize={12}
+                        >
+                          {`${props.name} (${percentage}%)`}
+                        </text>
+                    );
                   }}
                   labelLine={{ stroke: "var(--line-strong)", strokeWidth: 1 }}
               >
@@ -105,7 +116,9 @@ const WeatherPieChart: React.FC<WeatherPieChartProps> = ({ data }) => {
                     const percentage = total && entry?.payload?.value
                         ? ((entry.payload.value / total) * 100).toFixed(1)
                         : 0;
-                    return `${value} (${percentage}%)`;
+                    return (
+                        <span style={{ color: "var(--ink)" }}>{`${value} (${percentage}%)`}</span>
+                    );
                   }}
               />
             </PieChart>

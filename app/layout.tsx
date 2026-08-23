@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
+import { THEME_INIT_SCRIPT } from "@/components/ThemeToggle";
 
 const geistSans = Geist({
     variable: "--font-geist-sans",
@@ -42,9 +43,16 @@ export default function RootLayout({
     return (
         // The font variables live on <html> so Tailwind Preflight's own
         // `html { font-family: ... }` rule can resolve them too.
-        // The font variables live on <html> so Tailwind Preflight's own
-        // `html { font-family: ... }` rule can resolve them too.
-        <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable}`}>
+        // suppressHydrationWarning: the inline script below adds a class to <html>
+        // before React hydrates, which would otherwise be reported as a mismatch.
+        <html
+            lang="en"
+            suppressHydrationWarning
+            className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable}`}
+        >
+        <head>
+            <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        </head>
         <body className="antialiased">
         <Header />
         {children}

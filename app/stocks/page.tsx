@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { NAME_BY_SYMBOL, RANGE_KEYS, type Quote, type Range } from "@/lib/stocks";
+import { NAME_BY_SYMBOL, RANGE_KEYS, type Range } from "@/lib/stocks";
+import { useQuotes } from "@/lib/useQuotes";
 import { compactNumber, money, percent, relativeTime } from "@/lib/format";
 import {
     Card,
@@ -22,32 +23,6 @@ const PriceChart = dynamic(() => import("@/components/PriceChart").then((m) => m
 });
 
 
-/** Matches the watchlist route's own revalidate window; refetching sooner just re-renders identical numbers. */
-const CACHE_TTL_MS = 5 * 60 * 1000;
-const CACHE_KEY = "watchlist:v1";
-
-type CachedQuotes = { quotes: Quote[]; at: number };
-
-function readCache(): CachedQuotes | null {
-    try {
-        const raw = localStorage.getItem(CACHE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw) as CachedQuotes;
-        return Array.isArray(parsed?.quotes) && parsed.quotes.length ? parsed : null;
-    } catch {
-        // Private mode, disabled storage, or a stale shape — fall back to fetching.
-        return null;
-    }
-}
-
-function writeCache(quotes: Quote[]) {
-    try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify({ quotes, at: Date.now() }));
-    } catch {
-        // Non-fatal: the page works without the cache, it just reloads each visit.
-    }
-}
-
 function Change({ value, pct }: { value: number | null; pct: number | null }) {
     if (pct === null && value === null) return <span className="text-ink-subtle">—</span>;
     const up = (pct ?? value ?? 0) >= 0;
@@ -61,7 +36,16 @@ function Change({ value, pct }: { value: number | null; pct: number | null }) {
 }
 
 export default function StocksPage() {
-    const [quotes, setQuotes] = useState<Quote[]>([]);
+    // Cached-first quote loading, shared with the front-page ticker.
+    const {
+        quotes,
+        loading: loadingQuotes,
+        stale,
+        error,
+        fetchedAt,
+        refresh: loadQuotes,
+    } = useQuotes();
+
     const [selected, setSelected] = useState<string>("AAPL");
     const [currency, setCurrency] = useState("USD");
     const [currencies, setCurrencies] = useState<string[]>(["USD"]);
@@ -71,68 +55,10 @@ export default function StocksPage() {
     const [chartError, setChartError] = useState("");
     const [refreshChart, setRefreshChart] = useState(0);
     const [asOf, setAsOf] = useState<string | null>(null);
-    // Starts false: the cached paint below usually beats any network call.
-    const [loadingQuotes, setLoadingQuotes] = useState(true);
     const [loadingChart, setLoadingChart] = useState(true);
-    const [error, setError] = useState("");
-    const [stale, setStale] = useState(false);
-    const [fetchedAt, setFetchedAt] = useState<number | null>(null);
     const [notice, setNotice] = useState("");
 
     // Every symbol in one cached request — see app/api/stocks/watchlist/route.ts.
-    const loadQuotes = useCallback(async ({ background = false } = {}) => {
-        // A background refresh keeps the existing rows on screen rather than
-        // replacing them with skeletons; only a cold load has nothing to show.
-        if (!background) setLoadingQuotes(true);
-        setError("");
-        try {
-            const res = await fetch("/api/stocks/watchlist");
-            const data = await res.json();
-
-            // The route answers 200 with stale data and 503 only when there is
-            // nothing at all to show.
-            if (data?.quotes?.length) {
-                setQuotes(data.quotes);
-                setStale(Boolean(data.stale));
-                setFetchedAt(Date.now());
-                writeCache(data.quotes);
-                if (!data.stale) setError("");
-            } else if (background) {
-                // Keep whatever is already on screen; a failed background refresh
-                // should not wipe good rows.
-                setError(data?.error || `HTTP ${res.status}`);
-            } else {
-                setQuotes([]);
-                setStale(false);
-                throw new Error(data?.error || `HTTP ${res.status}`);
-            }
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "Failed to load quotes");
-        } finally {
-            setLoadingQuotes(false);
-        }
-    }, []);
-
-    /*
-     * Paint from the last known prices immediately, and only go to the network if
-     * they are older than the route's own cache window.
-     *
-     * Re-fetching from scratch on every visit showed skeletons for data that had
-     * not changed — /api/stocks/watchlist is cached server-side for 5 minutes, so
-     * a fresh visit inside that window was re-rendering identical numbers.
-     */
-    useEffect(() => {
-        const cached = readCache();
-
-        if (cached) {
-            setQuotes(cached.quotes);
-            setFetchedAt(cached.at);
-            setLoadingQuotes(false);
-        }
-
-        const age = cached ? Date.now() - cached.at : Infinity;
-        if (age > CACHE_TTL_MS) loadQuotes({ background: Boolean(cached) });
-    }, [loadQuotes]);
 
     useEffect(() => {
         let cancelled = false;
@@ -251,7 +177,7 @@ export default function StocksPage() {
                         <ErrorBanner
                             title="Live market data is unavailable"
                             message={`${error}. Prices will return automatically once the provider responds.`}
-                            onRetry={loadQuotes}
+                            onRetry={() => loadQuotes()}
                         />
                     </div>
                 )}

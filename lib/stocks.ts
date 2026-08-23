@@ -43,10 +43,28 @@ const at = (v: unknown, i: number): number | null => {
 };
 
 /**
- * Single bulk quote fetch, shared by /api/stocks/watchlist and the front page so
- * they cannot drift into two different request patterns against a 100/day quota.
+ * Last successful result, kept per warm serverless instance.
+ *
+ * marketdata.app 403s requests from Vercel's datacenter IPs (verified: every
+ * endpoint returns 403 from production and 203 from a residential IP, with any
+ * User-Agent, and with a valid, invalid, or absent token). Serving the last good
+ * payload keeps the page useful across transient blocks instead of emptying it.
  */
-export async function fetchQuotes(revalidate = 60): Promise<Quote[]> {
+let lastGood: { quotes: Quote[]; at: number } | null = null;
+
+/** How long a stale payload is still worth showing. */
+const STALE_TTL_MS = 6 * 60 * 60 * 1000;
+
+export type QuotesResult = {
+    quotes: Quote[];
+    /** True when the provider failed and this is the previous good payload. */
+    stale: boolean;
+    /** Age of a stale payload, ms. */
+    ageMs?: number;
+    error?: string;
+};
+
+async function requestQuotes(revalidate: number): Promise<Quote[]> {
     const token = process.env.MARKET_DATA_API_TOKEN;
     if (!token) throw new Error("Market data API token not configured");
 
@@ -54,7 +72,15 @@ export async function fetchQuotes(revalidate = 60): Promise<Quote[]> {
         `https://api.marketdata.app/v1/stocks/bulkquotes/` +
         `?symbols=${encodeURIComponent(SYMBOL_LIST.join(","))}&token=${token}`;
 
-    const res = await fetch(url, { next: { revalidate } });
+    const res = await fetch(url, {
+        next: { revalidate },
+        signal: AbortSignal.timeout(10_000),
+    });
+
+    if (res.status === 403) {
+        // Distinct message: this is an origin block, not a bad key or a quota.
+        throw new Error("Market data provider refused the request from this host (403)");
+    }
     if (!res.ok) throw new Error(`Quote lookup failed (HTTP ${res.status})`);
 
     const raw = await res.json();
@@ -73,4 +99,32 @@ export async function fetchQuotes(revalidate = 60): Promise<Quote[]> {
         volume: at(raw.volume, i),
         updated: at(raw.updated, i),
     }));
+}
+
+/**
+ * Single bulk quote fetch, shared by /api/stocks/watchlist and the front page so
+ * they cannot drift into two different request patterns against a 100/day quota.
+ *
+ * Never throws: callers get either fresh quotes, the last good payload marked
+ * stale, or an empty list with the reason. A markets strip that vanishes with no
+ * explanation is worse than one that says why.
+ */
+export async function fetchQuotes(revalidate = 60): Promise<QuotesResult> {
+    try {
+        const quotes = await requestQuotes(revalidate);
+        lastGood = { quotes, at: Date.now() };
+        return { quotes, stale: false };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to fetch quotes";
+
+        if (lastGood && Date.now() - lastGood.at < STALE_TTL_MS) {
+            return {
+                quotes: lastGood.quotes,
+                stale: true,
+                ageMs: Date.now() - lastGood.at,
+                error: message,
+            };
+        }
+        return { quotes: [], stale: false, error: message };
+    }
 }

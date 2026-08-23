@@ -10,10 +10,9 @@
 import Link from "next/link";
 import { connectDB } from "@/lib/db";
 import { Article as ArticleModel } from "@/models/Article";
-import { fetchQuotes, type Quote } from "@/lib/stocks";
-import { money, percent } from "@/lib/format";
 import { ArticleCard, type Article } from "@/components/ArticleCard";
-import { Icon, cn } from "@/components/ui";
+import { Icon } from "@/components/ui";
+import { MarketsStrip } from "@/components/MarketsStrip";
 
 export const dynamic = "force-dynamic";
 
@@ -41,47 +40,10 @@ async function getArticles(): Promise<Article[]> {
     }
 }
 
-async function getQuotes(): Promise<Quote[]> {
-    try {
-        return await fetchQuotes();
-    } catch {
-        return [];
-    }
-}
-
-function MarketsStrip({ quotes }: { quotes: Quote[] }) {
-    if (quotes.length === 0) return null;
-    return (
-        <section aria-label="Markets" className="border-y border-line">
-            <div className="no-scrollbar flex gap-6 overflow-x-auto py-3">
-                {quotes.map((q) => {
-                    const up = (q.changePercent ?? 0) >= 0;
-                    return (
-                        <Link
-                            key={q.symbol}
-                            href="/stocks"
-                            className="flex shrink-0 items-baseline gap-2 no-underline"
-                        >
-                            <span className="text-sm font-semibold text-ink">{q.symbol}</span>
-                            <span className="tabular text-sm text-ink-muted">
-                                {q.last == null ? "—" : money(q.last, "USD")}
-                            </span>
-                            {q.changePercent !== null && (
-                                <span className={cn("tabular text-xs", up ? "text-positive" : "text-negative")}>
-                                    {up ? "▲" : "▼"} {percent(Math.abs(q.changePercent))}
-                                </span>
-                            )}
-                        </Link>
-                    );
-                })}
-            </div>
-        </section>
-    );
-}
-
 export default async function HomePage() {
-    // Both are independent and each degrades to empty on failure.
-    const [articles, quotes] = await Promise.all([getArticles(), getQuotes()]);
+    // Market data is fetched client-side by <MarketsStrip>, so the front page
+    // renders news without waiting on a third party.
+    const articles = await getArticles();
 
     const [lead, ...rest] = articles;
     const featured = rest.slice(0, 9);
@@ -105,7 +67,7 @@ export default async function HomePage() {
                     </p>
                 </header>
 
-                <MarketsStrip quotes={quotes} />
+                <MarketsStrip />
 
                 {articles.length === 0 ? (
                     <p className="py-20 text-center text-lg text-ink-muted">

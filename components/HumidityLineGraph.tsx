@@ -87,14 +87,17 @@ const HumidityLineGraph: React.FC<HumidityLineGraphProps> = ({ data }) => {
                         />
                         <Legend
                             wrapperStyle={{ color: "var(--ink)" }}
-                            formatter={() => "Humidity"}
+                            formatter={(value: string) => (
+                                <span style={{ color: "var(--ink)" }}>{value}</span>
+                            )}
                         />
                         <Line
                             type="monotone"
                             dataKey="humidity"
-                            stroke="#51cf66"
+                            name="Humidity (%)"
+                            stroke="var(--positive)"
                             strokeWidth={3}
-                            dot={{ fill: "#51cf66", r: 4 }}
+                            dot={{ fill: "var(--positive)", r: 4 }}
                             activeDot={{ r: 6 }}
                         />
                     </LineChart>

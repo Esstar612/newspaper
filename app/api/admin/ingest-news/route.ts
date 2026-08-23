@@ -1,187 +1,173 @@
 // app/api/admin/ingest-news/route.ts
+//
+// Manual ingest, triggered by the dev-only button on /news.
+//
+// Runs the same keyless RSS feeds as the cron, and additionally pulls NewsAPI -
+// whose free tier only permits requests from localhost, so it contributes nothing
+// on Vercel but works fine here in development.
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
+import { FEEDS, fetchFeed, mergeArticles, normalizeUrl, type NormalizedArticle } from "@/lib/feeds";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null;
 
-const env = (name: string) => {
-    const v = process.env[name];
-    if (!v) throw new Error(`Missing env var: ${name}`);
-    return v;
-};
-
-const bearer = (req: NextRequest) =>
-    (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
-
-const okUrl = (u: unknown): string | null => {
-    if (!u) return null;
-    try {
-        const x = new URL(String(u));
-        return x.protocol === "http:" || x.protocol === "https:" ? x.toString() : null;
-    } catch {
-        return null;
-    }
-};
-
 const str = (v: unknown, fallback = ""): string =>
     typeof v === "string" ? v : v == null ? fallback : String(v);
 
-const date = (v: unknown): Date => {
-    const d = new Date(typeof v === "string" || typeof v === "number" ? v : Date.now());
-    return isNaN(d.getTime()) ? new Date() : d;
-};
+const bearer = (req: NextRequest) =>
+    (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
 
-const firstStr = (...vals: unknown[]) => {
-    for (const v of vals) if (typeof v === "string" && v.trim()) return v;
-    return "";
-};
+/** NewsAPI category -> our tag. "general" is the no-filter pseudo-category, so it gets no tag. */
+const NEWSAPI_CATEGORIES: Array<[string, string | null]> = [
+    ["general", null],
+    ["business", "business"],
+    ["technology", "technology"],
+    ["science", "science"],
+    ["health", "health"],
+    ["sports", "sports"],
+];
 
-const nytImage = (a: Obj): unknown => {
-    const mm = a.multimedia;
-    if (!Array.isArray(mm) || mm.length === 0) return null;
-    const items = mm.filter(isObj);
+async function fetchNewsApi(
+    category: string,
+    tag: string | null,
+    limit: number,
+    country: string
+): Promise<NormalizedArticle[]> {
+    const key = process.env.NEWS_API_KEY;
+    if (!key) return [];
 
-    const superJumbo = items.find((m) => m.format === "Super Jumbo")?.url;
-    return superJumbo ?? items[0]?.url ?? null;
-};
-
-const transformArticle = (raw: unknown, category: string) => {
-    if (!isObj(raw)) return null;
-
-    const url = okUrl(raw.url);
-    if (!url) return null;
-
-    const sourceObj = isObj(raw.source) ? raw.source : null;
-    const sourceName = sourceObj ? firstStr(sourceObj.name, sourceObj.id) : "";
-
-    const source =
-        sourceName ||
-        firstStr(raw.section, raw.subsection) ||
-        "unknown";
-
-    const publishedAt = date(firstStr(raw.publishedAt, raw.published_date, raw.created_date, raw.updated_date));
-
-    const imageUrl = okUrl(firstStr(raw.urlToImage, raw.image_url, nytImage(raw))) || "";
-
-    const providerId = str(raw.uri, "") || (sourceObj ? str(sourceObj.id, "") : "");
-
-    return {
-        title: str(raw.title, "Untitled"),
-        description: str(raw.description ?? raw.abstract ?? raw.content, ""),
-        url,
-        imageUrl,
-        source,
-        publishedAt,
-        providerId,
-        tags: [category],
-    };
-};
-
-const fetchJson = async (url: string, init?: RequestInit): Promise<unknown> => {
-    const res = await fetch(url, { ...init, cache: "no-store" });
-    if (!res.ok) throw new Error(`Fetch failed (${res.status})`);
-    return res.json();
-};
-
-const fetchNewsApi = async (limit: number, category: string, country: string = "us") => {
-    const key = env("NEWS_API_KEY");
     const u = new URL("https://newsapi.org/v2/top-headlines");
     u.searchParams.set("country", country);
     u.searchParams.set("category", category);
     u.searchParams.set("pageSize", String(Math.min(limit, 100)));
 
-    const json = await fetchJson(u.toString(), { headers: { "X-Api-Key": key } });
-    if (!isObj(json) || !Array.isArray(json.articles)) return [];
-    return json.articles;
-};
+    const res = await fetch(u.toString(), {
+        headers: { "X-Api-Key": key },
+        cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`NewsAPI ${category}: HTTP ${res.status}`);
 
-const fetchNYT = async (section: string, limit: number) => {
-    const key = env("NYT_API_KEY");
-    const u = new URL(`https://api.nytimes.com/svc/topstories/v2/${section}.json`);
-    u.searchParams.set("api-key", key);
+    const json = await res.json();
+    if (!isObj(json) || !Array.isArray(json.articles)) {
+        throw new Error(`NewsAPI ${category}: ${str(json?.message, "unexpected response")}`);
+    }
 
-    const json = await fetchJson(u.toString());
-    if (!isObj(json) || !Array.isArray(json.results)) return [];
-    return json.results.slice(0, limit);
-};
+    const out: NormalizedArticle[] = [];
+    for (const raw of json.articles) {
+        if (!isObj(raw)) continue;
+
+        const url = normalizeUrl(raw.url);
+        const title = str(raw.title);
+        if (!url || !title || title === "[Removed]") continue;
+
+        const sourceObj = isObj(raw.source) ? raw.source : null;
+        const published = new Date(str(raw.publishedAt));
+
+        out.push({
+            title,
+            description: str(raw.description ?? raw.content, ""),
+            url,
+            imageUrl: normalizeUrl(raw.urlToImage),
+            source: str(sourceObj?.name, "") || "NewsAPI",
+            publishedAt: isNaN(published.getTime()) ? new Date() : published,
+            providerId: str(sourceObj?.id, ""),
+            tags: tag ? [tag] : [],
+        });
+    }
+    return out;
+}
 
 export async function POST(req: NextRequest) {
     try {
-        if (bearer(req) !== env("ADMIN_INGEST_TOKEN")) {
+        const expected = process.env.ADMIN_INGEST_TOKEN;
+        if (!expected) {
+            return NextResponse.json({ error: "ADMIN_INGEST_TOKEN not configured" }, { status: 500 });
+        }
+        if (bearer(req) !== expected) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        let body: { limit?: number; section?: string; country?: string } = {};
+        let body: { limit?: number; country?: string } = {};
         try {
             const parsed: unknown = await req.json();
             if (isObj(parsed)) {
-                body.limit = typeof parsed.limit === "number" ? parsed.limit : undefined;
-                body.section = typeof parsed.section === "string" ? parsed.section : undefined;
-                body.country = typeof parsed.country === "string" ? parsed.country : undefined;
+                body = {
+                    limit: typeof parsed.limit === "number" ? parsed.limit : undefined,
+                    country: typeof parsed.country === "string" ? parsed.country : undefined,
+                };
             }
-        } catch {}
+        } catch {
+            // Body is optional.
+        }
 
         const limit = Math.min(Math.max(Number(body.limit ?? 20), 1), 100);
         const country = body.country || "us";
-        const perCategory = Math.floor(limit / 6);
 
         await connectDB();
 
-        const categories = ["business", "technology", "science", "health", "sports", "general"];
+        const [feedResults, newsApiResults] = await Promise.all([
+            Promise.all(FEEDS.map((spec) => fetchFeed(spec))),
+            Promise.all(
+                NEWSAPI_CATEGORIES.map(([category, tag]) =>
+                    fetchNewsApi(category, tag, limit, country).catch((e: unknown) => ({
+                        error: e instanceof Error ? e.message : "NewsAPI failed",
+                    }))
+                )
+            ),
+        ]);
 
-        const newsApiResults = await Promise.all(
-            categories.map(cat => fetchNewsApi(perCategory, cat, country).catch(() => []))
-        );
+        const newsApiArticles = newsApiResults.filter(Array.isArray) as NormalizedArticle[][];
+        // Surfaced rather than swallowed - NewsAPI answers 426 on Vercel, which is
+        // worth seeing in the response instead of silently getting zero articles.
+        const newsApiErrors = newsApiResults
+            .filter((r): r is { error: string } => !Array.isArray(r))
+            .map((r) => r.error);
 
-        const nytSection = body.section || "business";
-        const nytRaw = await fetchNYT(nytSection, perCategory).catch(() => []);
+        const unique = mergeArticles([...feedResults.map((r) => r.articles), ...newsApiArticles]);
 
-        const allRaw: Array<{ article: unknown; category: string }> = [];
-
-        categories.forEach((cat, idx) => {
-            newsApiResults[idx].forEach(article => {
-                allRaw.push({ article, category: cat });
-            });
-        });
-
-        nytRaw.forEach(article => {
-            allRaw.push({ article, category: nytSection });
-        });
-
-        const all = allRaw
-            .map(({ article, category }) => transformArticle(article, category))
-            .filter((x): x is NonNullable<ReturnType<typeof transformArticle>> => Boolean(x));
-
-        const unique = [...new Map(all.map((a) => [a.url, a])).values()];
-
-        const ops = unique.map((a) => ({
-            updateOne: { filter: { url: a.url }, update: { $set: a }, upsert: true },
+        const ops = unique.map(({ tags, ...fields }) => ({
+            updateOne: {
+                filter: { url: fields.url },
+                update: {
+                    $set: fields,
+                    ...(tags.length ? { $addToSet: { tags: { $each: tags } } } : {}),
+                },
+                upsert: true,
+            },
         }));
 
         const result = ops.length ? await Article.bulkWrite(ops, { ordered: false }) : null;
 
         return NextResponse.json({
             status: "ok",
-            pulled: {
-                newsapi: newsApiResults.flat().length,
-                nyt: nytRaw.length,
-                normalized: all.length,
-                unique: unique.length,
-            },
             country,
-            categories: categories,
+            feeds: feedResults.map((r) => ({
+                category: r.spec.category,
+                source: r.spec.source,
+                count: r.articles.length,
+                ...(r.error ? { error: r.error } : {}),
+            })),
+            newsapi: {
+                count: newsApiArticles.flat().length,
+                errors: newsApiErrors,
+            },
+            unique: unique.length,
             db: {
                 upserted: result?.upsertedCount ?? 0,
                 matched: result?.matchedCount ?? 0,
                 modified: result?.modifiedCount ?? 0,
             },
-            limit,
         });
     } catch (e: unknown) {
-        return NextResponse.json({ error: e instanceof Error ? e.message : "Ingest failed" }, { status: 500 });
+        return NextResponse.json(
+            { error: e instanceof Error ? e.message : "Ingest failed" },
+            { status: 500 }
+        );
     }
 }

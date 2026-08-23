@@ -134,10 +134,10 @@ NEWS_API_KEY=your_newsapi_key
 NYT_API_KEY=your_nyt_api_key
 
 # Weather API
-OPENWEATHER_API_KEY=your_openweather_key
+WEATHER_API_KEY=your_openweather_key
 
 # Stock Market API
-MARKET_DATA_API_KEY=your_market_data_key
+MARKET_DATA_API_TOKEN=your_market_data_key
 
 # Cron Security (optional but recommended)
 CRON_SECRET=your_secret_key_here

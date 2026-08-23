@@ -35,6 +35,9 @@ ArticleSchema.index({ url: 1 }, { unique: true });
 ArticleSchema.index({ publishedAt: -1 });
 ArticleSchema.index({ source: 1, publishedAt: -1 });
 
+// Category tabs filter on tags; without this the query is a full collection scan.
+ArticleSchema.index({ tags: 1, publishedAt: -1 });
+
 // Types
 export type ArticleDoc = InferSchemaType<typeof ArticleSchema>;
 

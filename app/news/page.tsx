@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { CATEGORIES, GENERAL, LABELS, isCategory } from "@/lib/categories";
 
 type Article = {
     _id?: string;
@@ -18,8 +20,6 @@ type NewsResponse = {
     nextCursor: string | null;
 };
 
-const CATEGORIES = ["general", "business", "technology", "science", "health", "sports"];
-
 const COUNTRY_CODES: Record<string, string> = {
     "US": "us", "United States": "us",
     "GB": "gb", "United Kingdom": "gb",
@@ -30,51 +30,96 @@ const COUNTRY_CODES: Record<string, string> = {
     "FR": "fr", "France": "fr",
 };
 
-export default function NewsPage() {
+/** Inline SVG, so a missing image never depends on a third-party host being alive. */
+const PLACEHOLDER_IMAGE =
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200">
+            <rect width="400" height="200" fill="#0f172a"/>
+            <text x="200" y="104" fill="#334155" font-family="system-ui,sans-serif"
+                  font-size="48" text-anchor="middle">&#9632;</text>
+        </svg>`.replace(/\s+/g, " ")
+    );
+
+const RELATIVE_UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ["year", 365 * 24 * 60 * 60 * 1000],
+    ["month", 30 * 24 * 60 * 60 * 1000],
+    ["day", 24 * 60 * 60 * 1000],
+    ["hour", 60 * 60 * 1000],
+    ["minute", 60 * 1000],
+];
+
+function relativeTime(iso?: string): string {
+    if (!iso) return "";
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return "";
+
+    const diff = then - Date.now();
+    const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+    for (const [unit, ms] of RELATIVE_UNITS) {
+        if (Math.abs(diff) >= ms) return formatter.format(Math.round(diff / ms), unit);
+    }
+    return "just now";
+}
+
+/** Cut on a word boundary instead of appending "..." to everything, short text included. */
+function truncate(text: string | undefined, max: number): string {
+    if (!text) return "";
+    const clean = text.trim();
+    if (clean.length <= max) return clean;
+
+    const cut = clean.slice(0, max);
+    const lastSpace = cut.lastIndexOf(" ");
+    return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}\u2026`;
+}
+
+function NewsPageInner() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
+
+    // The URL is the source of truth for the active tab, so a refresh or a shared
+    // link lands on the same category instead of resetting to "general".
+    const categoryParam = searchParams.get("category") ?? "";
+    const activeCategory = isCategory(categoryParam) ? categoryParam : GENERAL;
+
     const [articles, setArticles] = useState<Article[]>([]);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string>("");
-    const [activeCategory, setActiveCategory] = useState("general");
     const [searchQuery, setSearchQuery] = useState("");
     const [tempSearchQuery, setTempSearchQuery] = useState("");
     const [searchExpanded, setSearchExpanded] = useState(false);
-    const [mounted, setMounted] = useState(false);
     const [userCountry, setUserCountry] = useState("us");
+    const tabsRef = useRef<HTMLDivElement>(null);
     const limit = 20;
     const isDev = process.env.NODE_ENV === "development";
 
     useEffect(() => {
-        setMounted(true);
-        detectUserCountry();
-    }, []);
-
-    async function detectUserCountry() {
+        // Only in dev: the country is used solely by the dev-only ingest button, and
+        // prompting every visitor for their location to feed it is not a fair trade.
+        if (!isDev) return;
         try {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    async (position) => {
-                        const { latitude, longitude } = position.coords;
-                        try {
-                            const response = await fetch(
-                                `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
-                            );
-                            const data = await response.json();
-                            const countryCode = data.countryCode || "US";
-                            const country = COUNTRY_CODES[countryCode] || "us";
-                            setUserCountry(country);
-                        } catch (err) {
-                            setUserCountry("us");
-                        }
-                    },
-                    () => setUserCountry("us")
-                );
-            }
-        } catch (err) {
+            navigator.geolocation?.getCurrentPosition(
+                async (position) => {
+                    const { latitude, longitude } = position.coords;
+                    try {
+                        const response = await fetch(
+                            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+                        );
+                        const data = await response.json();
+                        setUserCountry(COUNTRY_CODES[data.countryCode || "US"] || "us");
+                    } catch {
+                        setUserCountry("us");
+                    }
+                },
+                () => setUserCountry("us")
+            );
+        } catch {
             setUserCountry("us");
         }
-    }
+    }, [isDev]);
 
     async function ingestNow() {
         try {
@@ -101,63 +146,86 @@ export default function NewsPage() {
             if (!res.ok) throw new Error("Ingest failed");
 
             await fetchArticles(activeCategory, searchQuery);
-            alert("✅ Articles ingested!");
         } catch (e: unknown) {
-            alert("❌ " + (e instanceof Error ? e.message : "Ingest failed"));
+            setError(e instanceof Error ? e.message : "Ingest failed");
         } finally {
             setLoading(false);
         }
     }
 
-    async function fetchArticles(category: string, search: string = "", cursor?: string | null, isLoadMore = false) {
-        if (isLoadMore) setLoadingMore(true);
-        else setLoading(true);
-        setError("");
+    const fetchArticles = useCallback(
+        async (category: string, search: string = "", cursor?: string | null, isLoadMore = false) => {
+            if (isLoadMore) setLoadingMore(true);
+            else setLoading(true);
+            setError("");
 
-        try {
-            const url = new URL("/api/news", window.location.origin);
-            url.searchParams.set("limit", String(limit));
-            if (category && category !== "general") url.searchParams.set("category", category);
-            if (search) url.searchParams.set("q", search);
-            if (cursor) url.searchParams.set("cursor", cursor);
+            try {
+                const url = new URL("/api/news", window.location.origin);
+                url.searchParams.set("limit", String(limit));
+                if (category && category !== GENERAL) url.searchParams.set("category", category);
+                if (search) url.searchParams.set("q", search);
+                if (cursor) url.searchParams.set("cursor", cursor);
 
-            const res = await fetch(url.toString(), { cache: "no-store" });
-            if (!res.ok) throw new Error("Failed to load");
+                const res = await fetch(url.toString(), { cache: "no-store" });
+                const data = (await res.json()) as NewsResponse & { error?: string };
 
-            const data = (await res.json()) as NewsResponse;
+                // The route answers 500 with an empty articles array, which the old
+                // code flattened into a generic "Failed to load" - surface the reason.
+                if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
 
-            if (isLoadMore) {
-                setArticles((prev) => {
-                    const existing = new Set(prev.map((a) => a._id ?? a.url));
-                    const incoming = (data.articles ?? []).filter((a) => !existing.has(a._id ?? a.url));
-                    return prev.concat(incoming);
-                });
-            } else {
-                setArticles(data.articles ?? []);
+                if (isLoadMore) {
+                    setArticles((prev) => {
+                        const existing = new Set(prev.map((a) => a._id ?? a.url));
+                        const incoming = (data.articles ?? []).filter((a) => !existing.has(a._id ?? a.url));
+                        return prev.concat(incoming);
+                    });
+                } else {
+                    setArticles(data.articles ?? []);
+                }
+
+                setNextCursor(data.nextCursor ?? null);
+            } catch (e: unknown) {
+                if (!isLoadMore) setArticles([]);
+                setError(e instanceof Error ? e.message : "Failed to load news");
+            } finally {
+                setLoading(false);
+                setLoadingMore(false);
             }
+        },
+        [limit]
+    );
 
-            setNextCursor(data.nextCursor ?? null);
-        } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : "Failed to load news");
-        } finally {
-            setLoading(false);
-            setLoadingMore(false);
-        }
-    }
-
+    // Refetch whenever the category in the URL changes (including back/forward).
     useEffect(() => {
-        if (mounted) fetchArticles(activeCategory, searchQuery);
-    }, [mounted]);
-
-    const handleCategoryClick = (category: string) => {
-        setActiveCategory(category);
+        fetchArticles(activeCategory, "");
         setSearchQuery("");
         setTempSearchQuery("");
         setSearchExpanded(false);
-        fetchArticles(category, "");
+    }, [activeCategory, fetchArticles]);
+
+    const selectCategory = useCallback(
+        (category: string) => {
+            const query = category === GENERAL ? "" : `?category=${category}`;
+            router.replace(`/news${query}`, { scroll: false });
+        },
+        [router]
+    );
+
+    /** Arrow-key navigation between tabs, per the WAI-ARIA tabs pattern. */
+    const handleTabKeyDown = (e: KeyboardEvent) => {
+        const offset = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (!offset) return;
+
+        e.preventDefault();
+        const current = CATEGORIES.indexOf(activeCategory as (typeof CATEGORIES)[number]);
+        const next = CATEGORIES[(current + offset + CATEGORIES.length) % CATEGORIES.length];
+        selectCategory(next);
+        requestAnimationFrame(() => {
+            tabsRef.current?.querySelector<HTMLButtonElement>(`[data-category="${next}"]`)?.focus();
+        });
     };
 
-    const handleSearchSubmit = (e: React.FormEvent) => {
+    const handleSearchSubmit = (e: FormEvent) => {
         e.preventDefault();
         const trimmed = tempSearchQuery.trim();
         setSearchQuery(trimmed);
@@ -181,7 +249,6 @@ export default function NewsPage() {
         }
     };
 
-    if (!mounted) return null;
 
     return (
         <div style={{ minHeight: "100vh", backgroundColor: "#0f172a" }}>
@@ -200,27 +267,35 @@ export default function NewsPage() {
             <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 1.5rem 2rem" }}>
                 <div style={{ backgroundColor: "#1e293b", borderRadius: "12px", padding: "1rem", border: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap", justifyContent: "space-between" }}>
                     {/* Categories */}
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", flex: 1 }}>
+                    <div
+                        ref={tabsRef}
+                        role="tablist"
+                        aria-label="News categories"
+                        onKeyDown={handleTabKeyDown}
+                        style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", flex: 1 }}
+                    >
                         {CATEGORIES.map((cat) => (
                             <button
                                 key={cat}
-                                onClick={() => handleCategoryClick(cat)}
-                                disabled={loading}
+                                role="tab"
+                                data-category={cat}
+                                aria-selected={activeCategory === cat}
+                                tabIndex={activeCategory === cat ? 0 : -1}
+                                onClick={() => selectCategory(cat)}
                                 style={{
                                     backgroundColor: activeCategory === cat ? "#3b82f6" : "transparent",
                                     color: activeCategory === cat ? "white" : "#94a3b8",
                                     border: "none",
-                                    cursor: loading ? "not-allowed" : "pointer",
+                                    outlineOffset: "2px",
+                                    cursor: "pointer",
                                     padding: "8px 16px",
                                     borderRadius: "8px",
-                                    textTransform: "capitalize",
                                     fontSize: "14px",
                                     fontWeight: 600,
                                     transition: "all 0.2s",
-                                    opacity: loading ? 0.5 : 1,
                                 }}
                                 onMouseOver={(e) => {
-                                    if (!loading && activeCategory !== cat) {
+                                    if (activeCategory !== cat) {
                                         e.currentTarget.style.backgroundColor = "#334155";
                                     }
                                 }}
@@ -230,7 +305,7 @@ export default function NewsPage() {
                                     }
                                 }}
                             >
-                                {cat}
+                                {LABELS[cat] ?? cat}
                             </button>
                         ))}
                     </div>
@@ -336,7 +411,7 @@ export default function NewsPage() {
                     <div style={{ marginTop: "1rem", fontSize: "14px", color: "#64748b" }}>
                         {searchQuery ? (
                             <>
-                                <span style={{ color: "white", fontWeight: 600 }}>{articles.length}</span> results for &quot;{searchQuery}&quot; in {activeCategory}
+                                <span style={{ color: "white", fontWeight: 600 }}>{articles.length}</span> results for &quot;{searchQuery}&quot; in {LABELS[activeCategory] ?? activeCategory}
                                 <button
                                     onClick={handleClearSearch}
                                     style={{
@@ -356,7 +431,7 @@ export default function NewsPage() {
                             </>
                         ) : (
                             <>
-                                <span style={{ color: "white", fontWeight: 600, textTransform: "capitalize" }}>{activeCategory}</span>
+                                <span style={{ color: "white", fontWeight: 600 }}>{LABELS[activeCategory] ?? activeCategory}</span>
                                 {articles.length > 0 && ` • ${articles.length} articles`}
                             </>
                         )}
@@ -366,20 +441,62 @@ export default function NewsPage() {
 
             {/* Content */}
             <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 1.5rem 3rem" }}>
+                {/* Skeletons mirror the real card layout, so the grid does not jump on load. */}
                 {loading && !loadingMore && (
-                    <div style={{ textAlign: "center", padding: "60px 20px", color: "#64748b" }}>
-                        <div style={{ fontSize: "32px", marginBottom: "1rem" }}>⏳</div>
-                        <div>Loading articles...</div>
+                    <div
+                        aria-busy="true"
+                        aria-label="Loading articles"
+                        style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1.5rem", marginBottom: "3rem" }}
+                    >
+                        {Array.from({ length: 6 }, (_, i) => (
+                            <div
+                                key={i}
+                                style={{
+                                    backgroundColor: "#1e293b",
+                                    borderRadius: "12px",
+                                    border: "1px solid rgba(255,255,255,0.1)",
+                                    overflow: "hidden",
+                                }}
+                            >
+                                <div style={{ height: "200px", backgroundColor: "#243044" }} />
+                                <div style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "10px" }}>
+                                    <div style={{ height: "10px", width: "35%", borderRadius: "4px", backgroundColor: "#243044" }} />
+                                    <div style={{ height: "14px", width: "92%", borderRadius: "4px", backgroundColor: "#243044" }} />
+                                    <div style={{ height: "14px", width: "70%", borderRadius: "4px", backgroundColor: "#243044" }} />
+                                    <div style={{ height: "10px", width: "100%", borderRadius: "4px", backgroundColor: "#1c2739" }} />
+                                    <div style={{ height: "10px", width: "80%", borderRadius: "4px", backgroundColor: "#1c2739" }} />
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
 
                 {error && (
-                    <div style={{ padding: "20px", margin: "0 auto 20px", maxWidth: "600px", backgroundColor: "#991b1b20", color: "#fca5a5", borderRadius: "12px", textAlign: "center", border: "1px solid #991b1b40" }}>
-                        {error}
+                    <div
+                        role="alert"
+                        style={{ padding: "20px", margin: "0 auto 20px", maxWidth: "600px", backgroundColor: "#991b1b20", color: "#fca5a5", borderRadius: "12px", textAlign: "center", border: "1px solid #991b1b40" }}
+                    >
+                        <div style={{ fontWeight: 600, marginBottom: "6px" }}>Could not load articles</div>
+                        <div style={{ fontSize: "14px", marginBottom: "14px" }}>{error}</div>
+                        <button
+                            onClick={() => fetchArticles(activeCategory, searchQuery)}
+                            style={{
+                                backgroundColor: "transparent",
+                                color: "#fca5a5",
+                                border: "1px solid #991b1b60",
+                                padding: "6px 16px",
+                                borderRadius: "6px",
+                                cursor: "pointer",
+                                fontSize: "13px",
+                                fontWeight: 600,
+                            }}
+                        >
+                            Try again
+                        </button>
                     </div>
                 )}
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1.5rem", marginBottom: "3rem" }}>
+                <div style={{ display: loading && !loadingMore ? "none" : "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1.5rem", marginBottom: "3rem" }}>
                     {articles.map((article) => (
                         <article
                             key={article._id ?? article.url}
@@ -403,21 +520,35 @@ export default function NewsPage() {
                             }}
                         >
                             <div style={{ width: "100%", height: "200px", overflow: "hidden", backgroundColor: "#0f172a" }}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                    src={article.imageUrl || "/newspaper.jpg"}
-                                    alt={article.title}
+                                    src={article.imageUrl || PLACEHOLDER_IMAGE}
+                                    alt=""
+                                    loading="lazy"
                                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                    onError={(e) => ((e.target as HTMLImageElement).src = "https://via.placeholder.com/400x200/1e293b/64748b?text=No+Image")}
+                                    onError={(e) => {
+                                        const img = e.currentTarget;
+                                        // Guard against a loop if the placeholder itself ever fails.
+                                        if (img.src !== PLACEHOLDER_IMAGE) img.src = PLACEHOLDER_IMAGE;
+                                    }}
                                 />
                             </div>
                             <div style={{ padding: "1.25rem", display: "flex", flexDirection: "column", flex: 1 }}>
-                                <div style={{ fontSize: "11px", color: "#3b82f6", fontWeight: 600, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                    {article.source}
-                                    {article.tags?.length && <span style={{ color: "#64748b", marginLeft: "6px" }}>• {article.tags[0]}</span>}
+                                <div style={{ fontSize: "11px", color: "#3b82f6", fontWeight: 600, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                                    <span>{article.source}</span>
+                                    {/* `tags?.length &&` renders a literal 0 when tags is empty. */}
+                                    {article.tags && article.tags.length > 0 ? (
+                                        <span style={{ color: "#64748b" }}>• {LABELS[article.tags[0]] ?? article.tags[0]}</span>
+                                    ) : null}
+                                    {relativeTime(article.publishedAt) ? (
+                                        <span style={{ color: "#64748b", textTransform: "none", fontWeight: 500 }}>
+                                            • {relativeTime(article.publishedAt)}
+                                        </span>
+                                    ) : null}
                                 </div>
                                 <h2 style={{ fontWeight: 600, color: "white", fontSize: "16px", lineHeight: "1.4", margin: "0 0 0.75rem 0" }}>{article.title}</h2>
                                 <p style={{ color: "#94a3b8", fontSize: "14px", lineHeight: "1.5", flex: 1, margin: "0 0 1rem 0" }}>
-                                    {article.description?.slice(0, 120)}...
+                                    {truncate(article.description, 140)}
                                 </p>
                                 <a
                                     href={article.url}
@@ -440,13 +571,21 @@ export default function NewsPage() {
                     ))}
                 </div>
 
-                {!loading && articles.length === 0 && (
+                {!loading && !error && articles.length === 0 && (
                     <div style={{ textAlign: "center", padding: "80px 20px", color: "#64748b" }}>
                         <div style={{ fontSize: "48px", marginBottom: "1rem" }}>📰</div>
                         <p style={{ fontSize: "18px", marginBottom: "10px", color: "white", fontWeight: 600 }}>
-                            {searchQuery ? `No results for "${searchQuery}"` : `No ${activeCategory} articles yet`}
+                            {searchQuery
+                                ? `No results for "${searchQuery}"`
+                                : `Nothing in ${LABELS[activeCategory] ?? activeCategory} right now`}
                         </p>
-                        <p style={{ fontSize: "14px" }}>{isDev ? "Click 📰 to ingest articles" : "Try a different category"}</p>
+                        <p style={{ fontSize: "14px" }}>
+                            {searchQuery
+                                ? "Try a different search term, or clear the search."
+                                : isDev
+                                    ? "Click 📰 to ingest articles."
+                                    : "This section refreshes daily - try another category."}
+                        </p>
                     </div>
                 )}
 
@@ -474,5 +613,13 @@ export default function NewsPage() {
                 )}
             </div>
         </div>
+    );
+}
+
+export default function NewsPage() {
+    return (
+        <Suspense fallback={<div style={{ minHeight: "100vh", backgroundColor: "#0f172a" }} />}>
+            <NewsPageInner />
+        </Suspense>
     );
 }

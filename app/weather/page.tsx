@@ -87,15 +87,27 @@ export default function WeatherPage() {
             async (position) => {
                 try {
                     const { latitude, longitude } = position.coords;
-                    // Get city name from coordinates
+
+                    // Reverse-geocode through OpenWeather rather than a third party, so
+                    // the name we prefill is one its forward search can actually find.
+                    // Other reverse geocoders return administrative areas such as
+                    // "Metro Vancouver Regional District", which resolve to nothing.
                     const response = await fetch(
-                        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+                        `/api/geocoding?lat=${latitude}&lon=${longitude}`,
+                        { cache: "no-store" }
                     );
-                    const locationData = await response.json();
-                    const cityName = locationData.city || locationData.locality || "";
-                    if (cityName) {
-                        setQ(cityName); // Just set the search box, don't fetch weather
-                    }
+                    if (!response.ok) return;
+
+                    const places: LocationSuggestion[] = await response.json();
+                    const place = Array.isArray(places) ? places[0] : null;
+                    if (!place?.name) return;
+
+                    // Same format the suggestion list uses, so the box reads consistently.
+                    setQ(
+                        place.state
+                            ? `${place.name}, ${place.state}, ${place.country}`
+                            : `${place.name}, ${place.country}`
+                    );
                 } catch (err) {
                     console.error("Failed to get location:", err);
                 } finally {

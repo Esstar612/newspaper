@@ -1,269 +1,156 @@
-"use client";
-
+// app/page.tsx
+//
+// The front page. This replaces a generic SaaS landing page (hero + three feature
+// cards + a "Features" checklist) whose copy had also gone stale — it advertised
+// "NYT, NewsAPI and more" when NewsAPI is dev-only in production and BBC is now a
+// primary source, and named Recharts, an internal library, to end users.
+//
+// Server Component: reads Mongo directly and shares the cached bulk quote fetch,
+// so the front page ships no client JS of its own.
 import Link from "next/link";
+import { connectDB } from "@/lib/db";
+import { Article as ArticleModel } from "@/models/Article";
+import { fetchQuotes, type Quote } from "@/lib/stocks";
+import { money, percent } from "@/lib/format";
+import { ArticleCard, type Article } from "@/components/ArticleCard";
+import { Icon, cn } from "@/components/ui";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+async function getArticles(): Promise<Article[]> {
+    try {
+        await connectDB();
+        const docs = await ArticleModel.find({})
+            .sort({ publishedAt: -1, _id: -1 })
+            .limit(22)
+            .select({ title: 1, description: 1, url: 1, imageUrl: 1, source: 1, publishedAt: 1, tags: 1 })
+            .lean();
+
+        return docs.map((d) => ({
+            _id: String(d._id),
+            title: d.title,
+            description: d.description ?? "",
+            url: d.url,
+            imageUrl: d.imageUrl ?? "",
+            source: d.source,
+            publishedAt: d.publishedAt ? new Date(d.publishedAt).toISOString() : undefined,
+            tags: d.tags ?? [],
+        }));
+    } catch {
+        return [];
+    }
+}
+
+async function getQuotes(): Promise<Quote[]> {
+    try {
+        return await fetchQuotes();
+    } catch {
+        return [];
+    }
+}
+
+function MarketsStrip({ quotes }: { quotes: Quote[] }) {
+    if (quotes.length === 0) return null;
     return (
-        <div style={{ minHeight: "100vh", backgroundColor: "#0f172a" }}>
+        <section aria-label="Markets" className="border-y border-line">
+            <div className="no-scrollbar flex gap-6 overflow-x-auto py-3">
+                {quotes.map((q) => {
+                    const up = (q.changePercent ?? 0) >= 0;
+                    return (
+                        <Link
+                            key={q.symbol}
+                            href="/stocks"
+                            className="flex shrink-0 items-baseline gap-2 no-underline"
+                        >
+                            <span className="text-sm font-semibold text-ink">{q.symbol}</span>
+                            <span className="tabular text-sm text-ink-muted">
+                                {q.last == null ? "—" : money(q.last, "USD")}
+                            </span>
+                            {q.changePercent !== null && (
+                                <span className={cn("tabular text-xs", up ? "text-positive" : "text-negative")}>
+                                    {up ? "▲" : "▼"} {percent(Math.abs(q.changePercent))}
+                                </span>
+                            )}
+                        </Link>
+                    );
+                })}
+            </div>
+        </section>
+    );
+}
 
-            {/* Hero Section */}
-            <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "4rem 1.5rem" }}>
-                <div style={{ textAlign: "center", marginBottom: "4rem" }}>
-                    <h1 style={{ fontSize: "clamp(40px, 6vw, 72px)", fontWeight: 800, color: "white", margin: "0 0 1rem 0", letterSpacing: "-2px" }}>
+export default async function HomePage() {
+    // Both are independent and each degrades to empty on failure.
+    const [articles, quotes] = await Promise.all([getArticles(), getQuotes()]);
+
+    const [lead, ...rest] = articles;
+    const featured = rest.slice(0, 9);
+    const more = rest.slice(9);
+
+    return (
+        <div className="min-h-screen">
+            <div className="mx-auto max-w-page px-4 py-8 sm:px-6">
+                {/* Masthead */}
+                <header className="mb-5 border-b-2 border-line-strong pb-5 text-center">
+                    <h1 className="font-serif text-5xl font-semibold tracking-tight text-ink sm:text-6xl">
                         The Newspaper
                     </h1>
-                    <p style={{ fontSize: "clamp(18px, 3vw, 24px)", color: "#94a3b8", margin: 0, maxWidth: "600px", marginLeft: "auto", marginRight: "auto" }}>
-                        Markets, news, and weather — all in one place.
+                    <p className="mt-2 text-base text-ink-muted">
+                        {new Date().toLocaleDateString(undefined, {
+                            weekday: "long",
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                        })}
                     </p>
-                </div>
+                </header>
 
-                {/* Feature Cards */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1.5rem", marginBottom: "4rem" }}>
-                    {/* News Card */}
-                    <Link href="/news" style={{ textDecoration: "none" }}>
-                        <div
-                            style={{
-                                backgroundColor: "#1e293b",
-                                borderRadius: "16px",
-                                padding: "2rem",
-                                border: "1px solid rgba(255,255,255,0.1)",
-                                transition: "all 0.3s",
-                                cursor: "pointer",
-                                height: "100%",
-                            }}
-                            onMouseOver={(e) => {
-                                e.currentTarget.style.transform = "translateY(-8px)";
-                                e.currentTarget.style.borderColor = "#3b82f6";
-                                e.currentTarget.style.boxShadow = "0 20px 40px rgba(59,130,246,0.2)";
-                            }}
-                            onMouseOut={(e) => {
-                                e.currentTarget.style.transform = "translateY(0)";
-                                e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
-                                e.currentTarget.style.boxShadow = "none";
-                            }}
-                        >
-                            <div style={{ fontSize: "48px", marginBottom: "1rem" }}>📰</div>
-                            <h2 style={{ fontSize: "28px", fontWeight: 700, color: "white", margin: "0 0 0.75rem 0" }}>
-                                News
-                            </h2>
-                            <p style={{ fontSize: "16px", color: "#94a3b8", lineHeight: "1.6", margin: 0 }}>
-                                Read the latest articles from multiple sources
-                            </p>
-                        </div>
-                    </Link>
+                <MarketsStrip quotes={quotes} />
 
-                    {/* Stocks Card */}
-                    <Link href="/stocks" style={{ textDecoration: "none" }}>
-                        <div
-                            style={{
-                                backgroundColor: "#1e293b",
-                                borderRadius: "16px",
-                                padding: "2rem",
-                                border: "1px solid rgba(255,255,255,0.1)",
-                                transition: "all 0.3s",
-                                cursor: "pointer",
-                                height: "100%",
-                            }}
-                            onMouseOver={(e) => {
-                                e.currentTarget.style.transform = "translateY(-8px)";
-                                e.currentTarget.style.borderColor = "#3b82f6";
-                                e.currentTarget.style.boxShadow = "0 20px 40px rgba(59,130,246,0.2)";
-                            }}
-                            onMouseOut={(e) => {
-                                e.currentTarget.style.transform = "translateY(0)";
-                                e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
-                                e.currentTarget.style.boxShadow = "none";
-                            }}
-                        >
-                            <div style={{ fontSize: "48px", marginBottom: "1rem" }}>📊</div>
-                            <h2 style={{ fontSize: "28px", fontWeight: 700, color: "white", margin: "0 0 0.75rem 0" }}>
-                                Stocks
-                            </h2>
-                            <p style={{ fontSize: "16px", color: "#94a3b8", lineHeight: "1.6", margin: 0 }}>
-                                Track stock prices and market data
-                            </p>
-                        </div>
-                    </Link>
+                {articles.length === 0 ? (
+                    <p className="py-20 text-center text-lg text-ink-muted">
+                        Today&rsquo;s edition is still being typeset. Check back shortly.
+                    </p>
+                ) : (
+                    <div className="mt-8 space-y-10">
+                        {lead && <ArticleCard article={lead} variant="lead" />}
 
-                    {/* Weather Card */}
-                    <Link href="/weather" style={{ textDecoration: "none" }}>
-                        <div
-                            style={{
-                                backgroundColor: "#1e293b",
-                                borderRadius: "16px",
-                                padding: "2rem",
-                                border: "1px solid rgba(255,255,255,0.1)",
-                                transition: "all 0.3s",
-                                cursor: "pointer",
-                                height: "100%",
-                            }}
-                            onMouseOver={(e) => {
-                                e.currentTarget.style.transform = "translateY(-8px)";
-                                e.currentTarget.style.borderColor = "#3b82f6";
-                                e.currentTarget.style.boxShadow = "0 20px 40px rgba(59,130,246,0.2)";
-                            }}
-                            onMouseOut={(e) => {
-                                e.currentTarget.style.transform = "translateY(0)";
-                                e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
-                                e.currentTarget.style.boxShadow = "none";
-                            }}
-                        >
-                            <div style={{ fontSize: "48px", marginBottom: "1rem" }}>⛅</div>
-                            <h2 style={{ fontSize: "28px", fontWeight: 700, color: "white", margin: "0 0 0.75rem 0" }}>
-                                Weather
-                            </h2>
-                            <p style={{ fontSize: "16px", color: "#94a3b8", lineHeight: "1.6", margin: 0 }}>
-                                View weather forecasts and visualizations
-                            </p>
-                        </div>
-                    </Link>
-                </div>
-
-                {/* Features Section */}
-                <div style={{ backgroundColor: "#1e293b", borderRadius: "16px", padding: "2.5rem", border: "1px solid rgba(255,255,255,0.1)" }}>
-                    <h2 style={{ fontSize: "28px", fontWeight: 700, color: "white", margin: "0 0 2rem 0" }}>
-                        Features
-                    </h2>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1.5rem" }}>
-                        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-                            <div style={{ fontSize: "24px" }}>✓</div>
-                            <div>
-                                <div style={{ fontSize: "16px", fontWeight: 600, color: "white", marginBottom: "0.25rem" }}>
-                                    Multi-source news aggregation
-                                </div>
-                                <div style={{ fontSize: "14px", color: "#94a3b8" }}>
-                                    NYT, NewsAPI and more
-                                </div>
+                        {featured.length > 0 && (
+                            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                                {featured.map((a) => (
+                                    <ArticleCard key={a._id ?? a.url} article={a} variant="feature" />
+                                ))}
                             </div>
-                        </div>
+                        )}
 
-                        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-                            <div style={{ fontSize: "24px" }}>✓</div>
-                            <div>
-                                <div style={{ fontSize: "16px", fontWeight: 600, color: "white", marginBottom: "0.25rem" }}>
-                                    Real-time stock market data
+                        {more.length > 0 && (
+                            <section aria-label="In brief">
+                                <h2 className="mb-1 border-b-2 border-line-strong pb-2 font-serif text-2xl font-semibold text-ink">
+                                    In brief
+                                </h2>
+                                <div className="grid gap-x-8 sm:grid-cols-2 lg:grid-cols-3">
+                                    {more.map((a) => (
+                                        <ArticleCard key={a._id ?? a.url} article={a} variant="compact" />
+                                    ))}
                                 </div>
-                                <div style={{ fontSize: "14px", color: "#94a3b8" }}>
-                                    Live prices and currency conversion
-                                </div>
-                            </div>
-                        </div>
+                            </section>
+                        )}
 
-                        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-                            <div style={{ fontSize: "24px" }}>✓</div>
-                            <div>
-                                <div style={{ fontSize: "16px", fontWeight: 600, color: "white", marginBottom: "0.25rem" }}>
-                                    Weather forecasts
-                                </div>
-                                <div style={{ fontSize: "14px", color: "#94a3b8" }}>
-                                    With Recharts visualizations
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-                            <div style={{ fontSize: "24px" }}>✓</div>
-                            <div>
-                                <div style={{ fontSize: "16px", fontWeight: 600, color: "white", marginBottom: "0.25rem" }}>
-                                    Search and filter articles
-                                </div>
-                                <div style={{ fontSize: "14px", color: "#94a3b8" }}>
-                                    Find exactly what you need
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-                            <div style={{ fontSize: "24px" }}>✓</div>
-                            <div>
-                                <div style={{ fontSize: "16px", fontWeight: 600, color: "white", marginBottom: "0.25rem" }}>
-                                    Responsive design
-                                </div>
-                                <div style={{ fontSize: "14px", color: "#94a3b8" }}>
-                                    Works on all devices
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-                            <div style={{ fontSize: "24px" }}>✓</div>
-                            <div>
-                                <div style={{ fontSize: "16px", fontWeight: 600, color: "white", marginBottom: "0.25rem" }}>
-                                    Location-aware
-                                </div>
-                                <div style={{ fontSize: "14px", color: "#94a3b8" }}>
-                                    Personalized content for your region
-                                </div>
-                            </div>
+                        <div className="flex justify-center border-t border-line pt-8">
+                            <Link
+                                href="/news"
+                                className="inline-flex items-center gap-2 rounded bg-accent-strong px-5 py-2.5 text-base font-semibold text-accent-ink no-underline transition-[filter] hover:brightness-110"
+                            >
+                                Browse all sections
+                                <Icon name="chevronRight" size={16} />
+                            </Link>
                         </div>
                     </div>
-                </div>
-
-                {/* CTA Section */}
-                <div style={{ textAlign: "center", marginTop: "4rem" }}>
-                    <p style={{ fontSize: "18px", color: "#94a3b8", marginBottom: "1.5rem" }}>
-                        Ready to get started?
-                    </p>
-                    <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
-                        <Link href="/news" style={{ textDecoration: "none" }}>
-                            <button
-                                style={{
-                                    backgroundColor: "#3b82f6",
-                                    color: "white",
-                                    border: "none",
-                                    padding: "14px 32px",
-                                    borderRadius: "12px",
-                                    fontSize: "16px",
-                                    fontWeight: 600,
-                                    cursor: "pointer",
-                                    transition: "all 0.2s",
-                                }}
-                                onMouseOver={(e) => {
-                                    e.currentTarget.style.backgroundColor = "#2563eb";
-                                    e.currentTarget.style.transform = "scale(1.05)";
-                                }}
-                                onMouseOut={(e) => {
-                                    e.currentTarget.style.backgroundColor = "#3b82f6";
-                                    e.currentTarget.style.transform = "scale(1)";
-                                }}
-                            >
-                                Browse News
-                            </button>
-                        </Link>
-                        <Link href="/stocks" style={{ textDecoration: "none" }}>
-                            <button
-                                style={{
-                                    backgroundColor: "transparent",
-                                    color: "#3b82f6",
-                                    border: "2px solid #3b82f6",
-                                    padding: "14px 32px",
-                                    borderRadius: "12px",
-                                    fontSize: "16px",
-                                    fontWeight: 600,
-                                    cursor: "pointer",
-                                    transition: "all 0.2s",
-                                }}
-                                onMouseOver={(e) => {
-                                    e.currentTarget.style.backgroundColor = "#3b82f6";
-                                    e.currentTarget.style.color = "white";
-                                }}
-                                onMouseOut={(e) => {
-                                    e.currentTarget.style.backgroundColor = "transparent";
-                                    e.currentTarget.style.color = "#3b82f6";
-                                }}
-                            >
-                                Check Stocks
-                            </button>
-                        </Link>
-                    </div>
-                </div>
+                )}
             </div>
 
-            {/* Footer */}
-            <footer style={{ borderTop: "1px solid rgba(255,255,255,0.1)", marginTop: "4rem", padding: "2rem 1.5rem", textAlign: "center" }}>
-                <p style={{ color: "#64748b", fontSize: "14px", margin: 0 }}>
-                    The Newspaper © {new Date().getFullYear()} • Your one-stop information hub
-                </p>
+            <footer className="border-t border-line py-6 text-center text-sm text-ink-subtle">
+                Reporting from the New York Times and the BBC · {new Date().getFullYear()}
             </footer>
         </div>
     );

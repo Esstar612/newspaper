@@ -18,26 +18,28 @@ interface WeatherPieChartProps {
   data: WeatherConditions;
 }
 
+// Condition hues, tuned to sit alongside the app palette rather than the
+// flat-UI set these were originally copied from.
 const COLORS: Record<string, string> = {
-  Clear: "#FFD93D",
-  Clouds: "#95A5A6",
-  Rain: "#3498DB",
-  Drizzle: "#5DADE2",
-  Thunderstorm: "#8E44AD",
-  Snow: "#ECF0F1",
-  Mist: "#BDC3C7",
-  Fog: "#95A5A6",
+  Clear: "#f0b429",
+  Clouds: "#8b98ac",
+  Rain: "#60a5fa",
+  Drizzle: "#7dd3fc",
+  Thunderstorm: "#a78bfa",
+  Snow: "#e2e8f0",
+  Mist: "#94a3b8",
+  Fog: "#64748b",
 };
 
 const DEFAULT_COLORS = [
-  "#FF6B6B",
-  "#4ECDC4",
-  "#45B7D1",
-  "#FFA07A",
-  "#98D8C8",
-  "#F7DC6F",
-  "#BB8FCE",
-  "#85C1E2",
+  "#60a5fa",
+  "#4ade80",
+  "#f0b429",
+  "#a78bfa",
+  "#7dd3fc",
+  "#f87171",
+  "#8b98ac",
+  "#e2e8f0",
 ];
 
 const WeatherPieChart: React.FC<WeatherPieChartProps> = ({ data }) => {
@@ -55,9 +57,7 @@ const WeatherPieChart: React.FC<WeatherPieChartProps> = ({ data }) => {
 
   return (
       <div className="w-full">
-        <h3 className="text-white text-2xl font-bold mb-6 text-center">
-          ☁️ Weather Conditions Distribution
-        </h3>
+        <h3 className="mb-4 font-serif text-xl font-semibold text-ink">Conditions breakdown</h3>
 
         <div className="w-full h-[450px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -73,24 +73,26 @@ const WeatherPieChart: React.FC<WeatherPieChartProps> = ({ data }) => {
                     const percentage = total ? ((entry.value / total) * 100).toFixed(1) : 0;
                     return `${entry.name} (${percentage}%)`;
                   }}
-                  labelLine={{ stroke: "white", strokeWidth: 1 }}
+                  labelLine={{ stroke: "var(--line-strong)", strokeWidth: 1 }}
               >
                 {chartData.map((entry, index) => (
                     <Cell
                         key={`cell-${index}`}
                         fill={COLORS[entry.name] || DEFAULT_COLORS[index % DEFAULT_COLORS.length]}
-                        stroke="rgba(255,255,255,0.3)"
+                        stroke="var(--line-strong)"
                         strokeWidth={2}
                     />
                 ))}
               </Pie>
               <Tooltip
                   contentStyle={{
-                    backgroundColor: "rgba(0,0,0,0.8)",
-                    border: "1px solid rgba(255,255,255,0.2)",
+                    backgroundColor: "var(--raised)",
+                    border: "1px solid var(--line-strong)",
                     borderRadius: "8px",
-                    color: "white"
+                    color: "var(--ink)"
                   }}
+                  itemStyle={{ color: "var(--ink)" }}
+                  labelStyle={{ color: "var(--ink-muted)" }}
                   formatter={(value: any) => {
                     const numValue = typeof value === 'number' ? value : 0;
                     const percentage = total ? ((numValue / total) * 100).toFixed(1) : 0;
@@ -98,7 +100,7 @@ const WeatherPieChart: React.FC<WeatherPieChartProps> = ({ data }) => {
                   }}
               />
               <Legend
-                  wrapperStyle={{ color: "white" }}
+                  wrapperStyle={{ color: "var(--ink)" }}
                   formatter={(value: string, entry: any) => {
                     const percentage = total && entry?.payload?.value
                         ? ((entry.payload.value / total) * 100).toFixed(1)

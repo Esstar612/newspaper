@@ -46,9 +46,7 @@ const HumidityLineGraph: React.FC<HumidityLineGraphProps> = ({ data }) => {
 
     return (
         <div className="w-full">
-            <h3 className="text-white text-2xl font-bold mb-6 text-center">
-                💧 Humidity Trends
-            </h3>
+            <h3 className="mb-4 font-serif text-xl font-semibold text-ink">Humidity trend</h3>
 
             <div className="w-full h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -56,37 +54,39 @@ const HumidityLineGraph: React.FC<HumidityLineGraphProps> = ({ data }) => {
                         data={chartData}
                         margin={{ top: 20, right: 30, bottom: 80, left: 20 }}
                     >
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
                         <XAxis
                             dataKey="time"
-                            tick={{ fill: "white", fontSize: 12 }}
+                            tick={{ fill: "var(--ink-muted)", fontSize: 12 }}
                             angle={-45}
                             textAnchor="end"
                             height={90}
-                            stroke="rgba(255,255,255,0.3)"
+                            stroke="var(--line-strong)"
                         />
                         <YAxis
-                            tick={{ fill: "white", fontSize: 12 }}
-                            stroke="rgba(255,255,255,0.3)"
+                            tick={{ fill: "var(--ink-muted)", fontSize: 12 }}
+                            stroke="var(--line-strong)"
                             domain={[0, 100]}
                             label={{
                                 value: "Humidity (%)",
                                 angle: -90,
                                 position: "insideLeft",
-                                style: { fill: "white", fontSize: 14 }
+                                style: { fill: "var(--ink-muted)", fontSize: 14 }
                             }}
                         />
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: "rgba(0,0,0,0.8)",
-                                border: "1px solid rgba(255,255,255,0.2)",
+                                backgroundColor: "var(--raised)",
+                                border: "1px solid var(--line-strong)",
                                 borderRadius: "8px",
-                                color: "white"
+                                color: "var(--ink)"
                             }}
+                            itemStyle={{ color: "var(--ink)" }}
+                            labelStyle={{ color: "var(--ink-muted)" }}
                             formatter={(value: any) => [`${value ?? 0}%`, "Humidity"]}
                         />
                         <Legend
-                            wrapperStyle={{ color: "white" }}
+                            wrapperStyle={{ color: "var(--ink)" }}
                             formatter={() => "Humidity"}
                         />
                         <Line

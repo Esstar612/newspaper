@@ -1,304 +1,270 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { NAME_BY_SYMBOL, type Quote } from "@/lib/stocks";
+import { compactNumber, money, percent } from "@/lib/format";
+import {
+    Button,
+    Card,
+    ErrorBanner,
+    Icon,
+    PageHeader,
+    SelectField,
+    Skeleton,
+    cn,
+} from "@/components/ui";
+import type { PricePoint } from "@/components/PriceChart";
 
-type Quote = {
-    symbol: string;
-    currency: string;
-    last: number;
-    change: number | null;
-    changePercent: number | null;
-    bid: number | null;
-    ask: number | null;
-    volume: number | null;
-    updated: number | null;
-    converted: { currency: string; last: number; rate: number } | null;
-};
+// Recharts touches the DOM on mount; keep it out of the server bundle.
+const PriceChart = dynamic(() => import("@/components/PriceChart").then((m) => m.PriceChart), {
+    ssr: false,
+    loading: () => <Skeleton className="h-64 w-full sm:h-72" />,
+});
 
-const STOCKS = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "META",
-    "TSLA", "BRK.A", "BABA", "V", "JNJ"
-];
+const RANGES = ["1m", "3m", "6m", "1y"] as const;
+type Range = (typeof RANGES)[number];
 
-const money = (value: number, currency: string) => {
-    try {
-        return new Intl.NumberFormat(undefined, {
-            style: "currency",
-            currency,
-            maximumFractionDigits: 2,
-        }).format(value);
-    } catch {
-        // Intl throws on codes it does not recognise; the raw number still beats nothing.
-        return `${value.toFixed(2)} ${currency}`;
-    }
-};
-
-const compact = (value: number) =>
-    new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+function Change({ value, pct }: { value: number | null; pct: number | null }) {
+    if (pct === null && value === null) return <span className="text-ink-subtle">—</span>;
+    const up = (pct ?? value ?? 0) >= 0;
+    return (
+        <span className={cn("tabular inline-flex items-center gap-1", up ? "text-positive" : "text-negative")}>
+            <Icon name={up ? "arrowUp" : "arrowDown"} size={14} />
+            {pct !== null && <span>{percent(Math.abs(pct))}</span>}
+            {value !== null && <span className="text-ink-subtle">({value >= 0 ? "+" : ""}{value.toFixed(2)})</span>}
+        </span>
+    );
+}
 
 export default function StocksPage() {
-    const [stock, setStock] = useState("AAPL");
+    const [quotes, setQuotes] = useState<Quote[]>([]);
+    const [selected, setSelected] = useState<string>("AAPL");
     const [currency, setCurrency] = useState("USD");
-    // Seeded so the picker is never empty, even if the currency list fails to load.
     const [currencies, setCurrencies] = useState<string[]>(["USD"]);
-    const [quote, setQuote] = useState<Quote | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [rate, setRate] = useState(1);
+    const [range, setRange] = useState<Range>("3m");
+    const [points, setPoints] = useState<PricePoint[]>([]);
+    const [loadingQuotes, setLoadingQuotes] = useState(true);
+    const [loadingChart, setLoadingChart] = useState(true);
     const [error, setError] = useState("");
-    const [currencyNotice, setCurrencyNotice] = useState("");
+    const [notice, setNotice] = useState("");
+
+    // Every symbol in one cached request — see app/api/stocks/watchlist/route.ts.
+    const loadQuotes = useCallback(async () => {
+        setLoadingQuotes(true);
+        setError("");
+        try {
+            const res = await fetch("/api/stocks/watchlist");
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+            setQuotes(data.quotes ?? []);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to load quotes");
+        } finally {
+            setLoadingQuotes(false);
+        }
+    }, []);
+
+    // Auto-loads: the page used to show "Select a Stock" until you clicked a button.
+    useEffect(() => {
+        loadQuotes();
+    }, [loadQuotes]);
 
     useEffect(() => {
         let cancelled = false;
-
         (async () => {
+            setLoadingChart(true);
             try {
-                const response = await fetch("/api/currencies");
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-                const data = await response.json();
-                if (cancelled) return;
-
-                if (Array.isArray(data.codes) && data.codes.length > 0) {
-                    setCurrencies(data.codes);
-                }
-                if (data.degraded) {
-                    setCurrencyNotice("Live currency list unavailable - showing common currencies.");
-                }
-            } catch (err) {
-                if (cancelled) return;
-                // Previously this was a bare console.error, so a failure looked like
-                // a dead dropdown with no explanation.
-                setCurrencyNotice(
-                    err instanceof Error
-                        ? `Could not load currency list (${err.message}).`
-                        : "Could not load currency list."
-                );
+                const res = await fetch(`/api/stocks/${encodeURIComponent(selected)}/candles?range=${range}`);
+                const data = await res.json();
+                if (!cancelled) setPoints(res.ok ? (data.points ?? []) : []);
+            } catch {
+                if (!cancelled) setPoints([]);
+            } finally {
+                if (!cancelled) setLoadingChart(false);
             }
         })();
+        return () => {
+            cancelled = true;
+        };
+    }, [selected, range]);
 
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch("/api/currencies");
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                if (cancelled) return;
+                if (Array.isArray(data.codes) && data.codes.length) setCurrencies(data.codes);
+                if (data.degraded) setNotice("Live currency list unavailable — showing common currencies.");
+            } catch (e) {
+                if (!cancelled) {
+                    setNotice(e instanceof Error ? `Could not load currency list (${e.message}).` : "Could not load currency list.");
+                }
+            }
+        })();
         return () => {
             cancelled = true;
         };
     }, []);
 
-    const fetchStockData = useCallback(async () => {
-        setLoading(true);
-        setError("");
-
-        try {
-            const response = await fetch(
-                `/api/stocks/${encodeURIComponent(stock)}?currency=${encodeURIComponent(currency)}`
-            );
-            const data = await response.json();
-
-            if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-
-            setQuote(data as Quote);
-        } catch (err) {
-            setQuote(null);
-            setError(err instanceof Error ? err.message : "Failed to fetch stock data");
-        } finally {
-            setLoading(false);
+    // One rate lookup drives the whole table, rather than converting per row.
+    useEffect(() => {
+        let cancelled = false;
+        if (currency === "USD") {
+            setRate(1);
+            return;
         }
-    }, [stock, currency]);
+        (async () => {
+            try {
+                const res = await fetch(`https://api.frankfurter.dev/v1/latest?base=USD&symbols=${currency}`);
+                const data = await res.json();
+                const r = data?.rates?.[currency];
+                if (!cancelled) setRate(typeof r === "number" ? r : 1);
+            } catch {
+                if (!cancelled) setRate(1);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [currency]);
+
+    const active = useMemo(() => quotes.find((q) => q.symbol === selected), [quotes, selected]);
+    const convert = (v: number) => v * rate;
+    const chartPoints = useMemo(
+        () => (rate === 1 ? points : points.map((p) => ({ ...p, close: p.close * rate }))),
+        [points, rate]
+    );
 
     return (
-        <div style={{ minHeight: "100vh", backgroundColor: "#0f172a" }}>
+        <div className="min-h-screen">
+            <div className="mx-auto max-w-page px-4 py-8 sm:px-6">
+                <PageHeader title="Markets" subtitle="Live prices with currency conversion" />
 
-            {/* Page Header */}
-            <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "2rem 1.5rem 1.5rem" }}>
-                <h1 style={{ fontSize: "32px", fontWeight: 700, color: "white", margin: "0 0 0.5rem 0" }}>
-                    Stock Market
-                </h1>
-                <p style={{ fontSize: "16px", color: "#94a3b8", margin: 0 }}>
-                    Track real-time stock prices and market data
-                </p>
-            </div>
-
-            {/* Content */}
-            <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "0 1.5rem 3rem" }}>
-                {/* Control Panel */}
-                <div style={{ backgroundColor: "#1e293b", borderRadius: "12px", padding: "1.5rem", border: "1px solid rgba(255,255,255,0.1)", marginBottom: "2rem" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
-                        <div>
-                            <label style={{ display: "block", fontSize: "13px", color: "#94a3b8", marginBottom: "8px", fontWeight: 600 }}>
-                                Stock Symbol
-                            </label>
-                            <select
-                                value={stock}
-                                onChange={(e) => setStock(e.target.value)}
-                                style={{
-                                    width: "100%",
-                                    padding: "10px 12px",
-                                    borderRadius: "8px",
-                                    border: "1px solid rgba(255,255,255,0.1)",
-                                    backgroundColor: "#0f172a",
-                                    color: "white",
-                                    fontSize: "15px",
-                                    outline: "none",
-                                    cursor: "pointer",
-                                }}
-                            >
-                                {STOCKS.map((s) => (
-                                    <option key={s} value={s}>{s}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label style={{ display: "block", fontSize: "13px", color: "#94a3b8", marginBottom: "8px", fontWeight: 600 }}>
-                                Currency
-                            </label>
-                            <select
-                                value={currency}
-                                onChange={(e) => setCurrency(e.target.value)}
-                                style={{
-                                    width: "100%",
-                                    padding: "10px 12px",
-                                    borderRadius: "8px",
-                                    border: "1px solid rgba(255,255,255,0.1)",
-                                    backgroundColor: "#0f172a",
-                                    color: "white",
-                                    fontSize: "15px",
-                                    outline: "none",
-                                    cursor: "pointer",
-                                }}
-                            >
-                                {currencies.map((cur) => (
-                                    <option key={cur} value={cur}>{cur}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div style={{ display: "flex", alignItems: "flex-end" }}>
-                            <button
-                                onClick={fetchStockData}
-                                disabled={loading}
-                                style={{
-                                    width: "100%",
-                                    padding: "10px 24px",
-                                    borderRadius: "8px",
-                                    backgroundColor: "#3b82f6",
-                                    color: "white",
-                                    border: "none",
-                                    fontSize: "15px",
-                                    fontWeight: 600,
-                                    cursor: loading ? "not-allowed" : "pointer",
-                                    opacity: loading ? 0.5 : 1,
-                                    transition: "all 0.2s",
-                                }}
-                                onMouseOver={(e) => !loading && (e.currentTarget.style.backgroundColor = "#2563eb")}
-                                onMouseOut={(e) => !loading && (e.currentTarget.style.backgroundColor = "#3b82f6")}
-                            >
-                                {loading ? "Loading..." : "📊 Fetch Price"}
-                            </button>
-                        </div>
-                    </div>
-
-                    {error && (
-                        <div style={{ padding: "12px", backgroundColor: "#991b1b20", color: "#fca5a5", borderRadius: "8px", border: "1px solid #991b1b40", fontSize: "14px" }}>
-                            ⚠️ {error}
-                        </div>
-                    )}
-
-                    {currencyNotice && !error && (
-                        <div style={{ padding: "12px", backgroundColor: "#78350f20", color: "#fcd34d", borderRadius: "8px", border: "1px solid #78350f40", fontSize: "14px" }}>
-                            ⚠️ {currencyNotice}
-                        </div>
-                    )}
+                <div className="mb-6 flex flex-wrap items-end gap-3 border-y border-line py-3">
+                    <SelectField
+                        label="Currency"
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value)}
+                        className="w-40"
+                    >
+                        {currencies.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                        ))}
+                    </SelectField>
+                    <Button variant="secondary" onClick={loadQuotes} disabled={loadingQuotes}>
+                        <Icon name="refresh" size={16} />
+                        Refresh
+                    </Button>
                 </div>
 
-                {/* Stock Data Display */}
-                {quote && !loading && (
-                    <div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: "1rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
-                            <h2 style={{ fontSize: "28px", fontWeight: 700, color: "white", margin: 0 }}>
-                                {quote.symbol}
-                            </h2>
-                            {quote.updated && (
-                                <span style={{ fontSize: "13px", color: "#64748b" }}>
-                                    as of {new Date(quote.updated * 1000).toLocaleString()}
-                                </span>
-                            )}
-                        </div>
-
-                        {/* Headline price */}
-                        <div style={{ backgroundColor: "#1e293b", borderRadius: "12px", padding: "1.75rem", border: "1px solid rgba(255,255,255,0.1)", marginBottom: "1rem" }}>
-                            <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px", fontWeight: 600 }}>
-                                Last price
-                            </div>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: "1rem", flexWrap: "wrap" }}>
-                                <div style={{ fontSize: "40px", fontWeight: 700, color: "white", lineHeight: 1.1 }}>
-                                    {money(quote.converted ? quote.converted.last : quote.last, quote.converted ? quote.converted.currency : quote.currency)}
-                                </div>
-                                {quote.changePercent !== null && (
-                                    <div style={{ fontSize: "18px", fontWeight: 600, color: quote.changePercent >= 0 ? "#4ade80" : "#f87171" }}>
-                                        {quote.changePercent >= 0 ? "▲" : "▼"}{" "}
-                                        {Math.abs(quote.changePercent * 100).toFixed(2)}%
-                                        {quote.change !== null && (
-                                            <span style={{ color: "#94a3b8", fontWeight: 500, marginLeft: "8px" }}>
-                                                ({quote.change >= 0 ? "+" : ""}{quote.change.toFixed(2)})
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                            {quote.converted && (
-                                <div style={{ fontSize: "13px", color: "#94a3b8", marginTop: "10px" }}>
-                                    {money(quote.last, "USD")} &middot; 1 USD = {quote.converted.rate.toFixed(4)} {quote.converted.currency}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Secondary metrics */}
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "1rem" }}>
-                            {([
-                                ["Bid", quote.bid === null ? null : money(quote.bid, "USD")],
-                                ["Ask", quote.ask === null ? null : money(quote.ask, "USD")],
-                                ["Volume", quote.volume === null ? null : compact(quote.volume)],
-                            ] as const)
-                                .filter(([, value]) => value !== null)
-                                .map(([label, value]) => (
-                                    <div
-                                        key={label}
-                                        style={{
-                                            backgroundColor: "#1e293b",
-                                            borderRadius: "12px",
-                                            padding: "1.25rem",
-                                            border: "1px solid rgba(255,255,255,0.1)",
-                                        }}
-                                    >
-                                        <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px", fontWeight: 600 }}>
-                                            {label}
-                                        </div>
-                                        <div style={{ fontSize: "22px", fontWeight: 700, color: "white" }}>
-                                            {value}
-                                        </div>
-                                    </div>
-                                ))}
-                        </div>
+                {notice && !error && (
+                    <div className="mb-5">
+                        <ErrorBanner tone="warn" title="Heads up" message={notice} />
+                    </div>
+                )}
+                {error && (
+                    <div className="mb-5">
+                        <ErrorBanner title="Could not load market data" message={error} onRetry={loadQuotes} />
                     </div>
                 )}
 
-                {/* Empty State */}
-                {!quote && !loading && !error && (
-                    <div style={{ textAlign: "center", padding: "80px 20px", color: "#64748b" }}>
-                        <div style={{ fontSize: "64px", marginBottom: "1rem" }}>📈</div>
-                        <h2 style={{ fontSize: "24px", fontWeight: 600, color: "white", marginBottom: "8px" }}>
-                            Select a Stock
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+                    {/* Detail + chart */}
+                    <Card className="order-2 lg:order-1 lg:self-start">
+                        <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                                <p className="text-sm text-ink-muted">{NAME_BY_SYMBOL[selected] ?? selected}</p>
+                                <h2 className="font-serif text-3xl font-semibold text-ink">{selected}</h2>
+                            </div>
+                            {active?.last != null && (
+                                <div className="text-right">
+                                    <p className="tabular text-3xl font-semibold text-ink">
+                                        {money(convert(active.last), currency)}
+                                    </p>
+                                    <Change value={active.change} pct={active.changePercent} />
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="mb-4 flex gap-1">
+                            {RANGES.map((r) => (
+                                <button
+                                    key={r}
+                                    onClick={() => setRange(r)}
+                                    aria-pressed={range === r}
+                                    className={cn(
+                                        "rounded px-2.5 py-1 text-sm font-semibold uppercase transition-colors",
+                                        range === r
+                                            ? "bg-accent-strong text-accent-ink"
+                                            : "text-ink-muted hover:bg-raised hover:text-ink"
+                                    )}
+                                >
+                                    {r}
+                                </button>
+                            ))}
+                        </div>
+
+                        {loadingChart ? (
+                            <Skeleton className="h-64 w-full sm:h-72" />
+                        ) : (
+                            <PriceChart points={chartPoints} currency={currency} />
+                        )}
+                    </Card>
+
+                    {/* Watchlist */}
+                    <Card className="order-1 lg:order-2" padded={false}>
+                        <h2 className="border-b border-line px-4 py-3 font-serif text-xl font-semibold text-ink">
+                            Watchlist
                         </h2>
-                        <p style={{ fontSize: "16px" }}>
-                            Choose a stock symbol and currency, then click &ldquo;Fetch Price&rdquo;
-                        </p>
-                    </div>
-                )}
-
-                {/* Loading State */}
-                {loading && (
-                    <div style={{ textAlign: "center", padding: "80px 20px", color: "#64748b" }}>
-                        <div style={{ fontSize: "48px", marginBottom: "1rem" }}>⏳</div>
-                        <div style={{ fontSize: "18px" }}>Loading stock data...</div>
-                    </div>
-                )}
+                        {loadingQuotes ? (
+                            <div className="space-y-3 p-4">
+                                {Array.from({ length: 8 }, (_, i) => (
+                                    <Skeleton key={i} className="h-9 w-full" />
+                                ))}
+                            </div>
+                        ) : (
+                            <ul className="divide-y divide-line">
+                                {quotes.map((q) => (
+                                    <li key={q.symbol}>
+                                        <button
+                                            onClick={() => setSelected(q.symbol)}
+                                            aria-current={q.symbol === selected ? "true" : undefined}
+                                            className={cn(
+                                                "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors",
+                                                q.symbol === selected ? "bg-raised" : "hover:bg-raised"
+                                            )}
+                                        >
+                                            <span className="min-w-0">
+                                                <span className="block truncate text-base font-semibold text-ink">
+                                                    {q.symbol}
+                                                </span>
+                                                <span className="block truncate text-xs text-ink-subtle">{q.name}</span>
+                                            </span>
+                                            <span className="shrink-0 text-right">
+                                                <span className="tabular block text-base text-ink">
+                                                    {q.last == null ? "—" : money(convert(q.last), currency)}
+                                                </span>
+                                                <span className="block text-xs">
+                                                    <Change value={null} pct={q.changePercent} />
+                                                </span>
+                                            </span>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                        {active?.volume != null && (
+                            <p className="border-t border-line px-4 py-2.5 text-xs text-ink-subtle">
+                                {selected} volume: <span className="tabular">{compactNumber(active.volume)}</span>
+                            </p>
+                        )}
+                    </Card>
+                </div>
             </div>
         </div>
     );

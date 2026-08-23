@@ -1,70 +1,64 @@
 // app/api/stocks/[symbol]/candles/route.ts
 //
-// Daily OHLC history for the price chart. Cached for the same quota reason as
-// the watchlist route — see lib/stocks.ts.
+// Daily price history, served entirely from MongoDB.
+//
+// This route deliberately makes NO provider call. History is written once a day by
+// /api/cron/refresh-candles; see models/CandleSeries.ts for why. Adding a live
+// fallback here would reintroduce exactly the dependency that change removed, so
+// a missing series returns empty points with a reason instead.
 import { NextRequest, NextResponse } from "next/server";
+import { connectDB } from "@/lib/db";
+import { CandleSeries } from "@/models/CandleSeries";
+import { RANGES, type Range } from "@/lib/stocks";
 
 export const runtime = "nodejs";
-// Daily candles change once a day, so an hour was 24x more often than the data
-// warrants. It matters here because there are 10 symbols x 4 ranges = 40 distinct
-// cache keys, each needing its own upstream call — making this the heaviest
-// caller of a provider that blocks on IP switching. See lib/stocks.ts.
-export const revalidate = 86400;
+export const dynamic = "force-dynamic";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const RANGES: Record<string, number> = {
-    "1m": 31,
-    "3m": 93,
-    "6m": 186,
-    "1y": 366,
-};
 
 export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ symbol: string }> }
 ) {
     const { symbol } = await params;
-    const range = request.nextUrl.searchParams.get("range") ?? "3m";
-    const days = RANGES[range] ?? RANGES["3m"];
+    const requested = request.nextUrl.searchParams.get("range") ?? "3m";
+    const range: Range = requested in RANGES ? (requested as Range) : "3m";
 
     try {
-        const token = process.env.MARKET_DATA_API_TOKEN;
-        if (!token) {
-            return NextResponse.json({ error: "Market data API token not configured" }, { status: 500 });
+        await connectDB();
+
+        const series = await CandleSeries.findOne({ symbol: symbol.toUpperCase() })
+            .select({ points: 1, fetchedAt: 1 })
+            .lean();
+
+        if (!series) {
+            return NextResponse.json(
+                {
+                    symbol,
+                    range,
+                    points: [],
+                    error: "No stored history for this symbol yet — it is written by the daily job.",
+                },
+                { status: 404 }
+            );
         }
 
-        const to = new Date();
-        const from = new Date(to.getTime() - days * DAY_MS);
-        const iso = (d: Date) => d.toISOString().slice(0, 10);
+        // One stored year serves every range: each is just a tail of the same array.
+        const cutoff = Date.now() - RANGES[range] * DAY_MS;
+        const points = (series.points ?? []).filter((p) => p.t >= cutoff);
 
-        const url =
-            `https://api.marketdata.app/v1/stocks/candles/D/${encodeURIComponent(symbol)}/` +
-            `?from=${iso(from)}&to=${iso(to)}&token=${token}`;
-
-        const res = await fetch(url, { next: { revalidate } });
-        if (!res.ok) throw new Error(`History lookup failed (HTTP ${res.status})`);
-
-        const raw = await res.json();
-        // "no_data" is a legitimate answer for a symbol with no candles in range.
-        if (raw?.s === "no_data") return NextResponse.json({ symbol, range, points: [] });
-        if (raw?.s && raw.s !== "ok") throw new Error(raw.errmsg || "No history available");
-
-        const t: unknown = raw?.t;
-        const c: unknown = raw?.c;
-        if (!Array.isArray(t) || !Array.isArray(c)) throw new Error("Unexpected response shape");
-
-        const points = t
-            .map((sec, i) => ({
-                t: Number(sec) * 1000,
-                close: typeof c[i] === "number" ? (c[i] as number) : null,
-            }))
-            .filter((p): p is { t: number; close: number } => p.close !== null);
-
-        return NextResponse.json({ symbol, range, points });
+        return NextResponse.json({
+            symbol,
+            range,
+            points,
+            asOf: series.fetchedAt ?? null,
+        });
     } catch (error) {
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to fetch history", points: [] },
+            {
+                error: error instanceof Error ? error.message : "Failed to read history",
+                points: [],
+            },
             { status: 500 }
         );
     }

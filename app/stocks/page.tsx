@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { NAME_BY_SYMBOL, type Quote } from "@/lib/stocks";
+import { NAME_BY_SYMBOL, RANGE_KEYS, type Quote, type Range } from "@/lib/stocks";
 import { compactNumber, money, percent } from "@/lib/format";
 import {
     Button,
@@ -22,8 +22,6 @@ const PriceChart = dynamic(() => import("@/components/PriceChart").then((m) => m
     loading: () => <Skeleton className="h-64 w-full sm:h-72" />,
 });
 
-const RANGES = ["1m", "3m", "6m", "1y"] as const;
-type Range = (typeof RANGES)[number];
 
 function Change({ value, pct }: { value: number | null; pct: number | null }) {
     if (pct === null && value === null) return <span className="text-ink-subtle">—</span>;
@@ -47,6 +45,7 @@ export default function StocksPage() {
     const [points, setPoints] = useState<PricePoint[]>([]);
     const [chartError, setChartError] = useState("");
     const [refreshChart, setRefreshChart] = useState(0);
+    const [asOf, setAsOf] = useState<string | null>(null);
     const [loadingQuotes, setLoadingQuotes] = useState(true);
     const [loadingChart, setLoadingChart] = useState(true);
     const [error, setError] = useState("");
@@ -87,14 +86,9 @@ export default function StocksPage() {
     useEffect(() => {
         let cancelled = false;
 
-        // Only chart a symbol we actually have a quote for. Firing this while the
-        // provider is failing spends a second upstream request to draw nothing —
-        // and each request risks another 5-minute IP block.
-        if (loadingQuotes || !quotes.some((q) => q.symbol === selected)) {
-            setPoints([]);
-            setLoadingChart(loadingQuotes);
-            return;
-        }
+        // Deliberately NOT gated on live quotes any more. That gate made sense while
+        // candles came from the provider, but history now lives in our own database,
+        // so a quote outage must not blank a chart whose data is sitting locally.
 
         (async () => {
             setLoadingChart(true);
@@ -112,6 +106,7 @@ export default function StocksPage() {
                     setChartError(data?.error || `Request failed (${res.status})`);
                 } else {
                     setPoints(data.points ?? []);
+                    setAsOf(data.asOf ?? null);
                 }
             } catch (e) {
                 if (!cancelled) {
@@ -125,7 +120,7 @@ export default function StocksPage() {
         return () => {
             cancelled = true;
         };
-    }, [selected, range, quotes, loadingQuotes, refreshChart]);
+    }, [selected, range, refreshChart]);
 
     useEffect(() => {
         let cancelled = false;
@@ -242,8 +237,8 @@ export default function StocksPage() {
                             )}
                         </div>
 
-                        <div className="mb-4 flex gap-1">
-                            {RANGES.map((r) => (
+                        <div className="mb-4 flex flex-wrap items-center gap-1">
+                            {RANGE_KEYS.map((r) => (
                                 <button
                                     key={r}
                                     onClick={() => setRange(r)}
@@ -258,6 +253,15 @@ export default function StocksPage() {
                                     {r}
                                 </button>
                             ))}
+                            {asOf && (
+                                <span className="ml-auto text-xs text-ink-subtle">
+                                    Daily closes as of{" "}
+                                    {new Date(asOf).toLocaleDateString(undefined, {
+                                        month: "short",
+                                        day: "numeric",
+                                    })}
+                                </span>
+                            )}
                         </div>
 
                         {loadingChart ? (

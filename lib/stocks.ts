@@ -45,10 +45,10 @@ const at = (v: unknown, i: number): number | null => {
 /**
  * Last successful result, kept per warm serverless instance.
  *
- * marketdata.app 403s requests from Vercel's datacenter IPs (verified: every
- * endpoint returns 403 from production and 203 from a residential IP, with any
- * User-Agent, and with a valid, invalid, or absent token). Serving the last good
- * payload keeps the page useful across transient blocks instead of emptying it.
+ * marketdata.app intermittently 403s requests from Vercel's datacenter IPs —
+ * measured at 0/13 success during one window and 20/20 shortly after, with the
+ * same token and quota remaining. It is transient, not a permanent block, so the
+ * fix is to retry and to hold on to a good payload rather than to swap provider.
  */
 let lastGood: { quotes: Quote[]; at: number } | null = null;
 
@@ -64,6 +64,35 @@ export type QuotesResult = {
     error?: string;
 };
 
+/** Status codes worth retrying: the intermittent origin block, rate limits, and 5xx. */
+const RETRYABLE = new Set([403, 408, 429, 500, 502, 503, 504]);
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function fetchWithRetry(url: string, revalidate: number, attempts = 3): Promise<Response> {
+    let last: Response | null = null;
+
+    for (let i = 0; i < attempts; i++) {
+        // Only the first attempt may be served from cache; a retry must go out.
+        const res = await fetch(url, {
+            ...(i === 0 ? { next: { revalidate } } : { cache: "no-store" as const }),
+            signal: AbortSignal.timeout(8_000),
+        });
+
+        if (res.ok) return res;
+        last = res;
+        if (!RETRYABLE.has(res.status)) break;
+
+        // Short backoff: this runs inside a request, so the budget is tight.
+        if (i < attempts - 1) await sleep(300 * (i + 1));
+    }
+
+    if (last?.status === 403) {
+        throw new Error("Market data provider refused the request from this host (403)");
+    }
+    throw new Error(`Quote lookup failed (HTTP ${last?.status ?? "unknown"})`);
+}
+
 async function requestQuotes(revalidate: number): Promise<Quote[]> {
     const token = process.env.MARKET_DATA_API_TOKEN;
     if (!token) throw new Error("Market data API token not configured");
@@ -72,16 +101,10 @@ async function requestQuotes(revalidate: number): Promise<Quote[]> {
         `https://api.marketdata.app/v1/stocks/bulkquotes/` +
         `?symbols=${encodeURIComponent(SYMBOL_LIST.join(","))}&token=${token}`;
 
-    const res = await fetch(url, {
-        next: { revalidate },
-        signal: AbortSignal.timeout(10_000),
-    });
-
-    if (res.status === 403) {
-        // Distinct message: this is an origin block, not a bad key or a quota.
-        throw new Error("Market data provider refused the request from this host (403)");
-    }
-    if (!res.ok) throw new Error(`Quote lookup failed (HTTP ${res.status})`);
+    // The block is transient and clears within seconds, so a couple of quick
+    // retries convert most failures into successes. Without this the user has to
+    // click "Try again" repeatedly, which is what the server should be doing.
+    const res = await fetchWithRetry(url, revalidate);
 
     const raw = await res.json();
     // The provider signals failure in the body, not the status code.

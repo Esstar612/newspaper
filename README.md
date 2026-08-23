@@ -461,8 +461,9 @@ Contributions are what make the open-source community amazing! Any contributions
 - **Cron timing is approximate.** Vercel's Hobby plan runs jobs once per day with
   up to ±59 minutes of jitter.
 - **Prices are delayed**, not real-time — a free-tier limitation, stated in the UI.
-- `PROJECT_SUMMARY.md` predates several routes and is out of date; this README is
-  the current reference.
+- `PROJECT_SUMMARY.md` lives outside the git repository, so it is not
+  version-controlled and can drift. It covers architecture and operations; this
+  README is the public reference.
 
 See [open issues](https://github.com/Esstar612/newspaper/issues) for a full list of known issues.
 

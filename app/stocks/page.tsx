@@ -45,6 +45,8 @@ export default function StocksPage() {
     const [rate, setRate] = useState(1);
     const [range, setRange] = useState<Range>("3m");
     const [points, setPoints] = useState<PricePoint[]>([]);
+    const [chartError, setChartError] = useState("");
+    const [refreshChart, setRefreshChart] = useState(0);
     const [loadingQuotes, setLoadingQuotes] = useState(true);
     const [loadingChart, setLoadingChart] = useState(true);
     const [error, setError] = useState("");
@@ -96,12 +98,26 @@ export default function StocksPage() {
 
         (async () => {
             setLoadingChart(true);
+            setChartError("");
             try {
                 const res = await fetch(`/api/stocks/${encodeURIComponent(selected)}/candles?range=${range}`);
                 const data = await res.json();
-                if (!cancelled) setPoints(res.ok ? (data.points ?? []) : []);
-            } catch {
-                if (!cancelled) setPoints([]);
+                if (cancelled) return;
+
+                // A failed request is not the same as a symbol with no history.
+                // Collapsing both into an empty array made the chart claim "not
+                // enough history to chart" when the request had actually failed.
+                if (!res.ok) {
+                    setPoints([]);
+                    setChartError(data?.error || `Request failed (${res.status})`);
+                } else {
+                    setPoints(data.points ?? []);
+                }
+            } catch (e) {
+                if (!cancelled) {
+                    setPoints([]);
+                    setChartError(e instanceof Error ? e.message : "Could not load price history");
+                }
             } finally {
                 if (!cancelled) setLoadingChart(false);
             }
@@ -109,7 +125,7 @@ export default function StocksPage() {
         return () => {
             cancelled = true;
         };
-    }, [selected, range, quotes, loadingQuotes]);
+    }, [selected, range, quotes, loadingQuotes, refreshChart]);
 
     useEffect(() => {
         let cancelled = false;
@@ -246,6 +262,21 @@ export default function StocksPage() {
 
                         {loadingChart ? (
                             <Skeleton className="h-64 w-full sm:h-72" />
+                        ) : chartError ? (
+                            <div className="grid h-64 place-items-center sm:h-72">
+                                <div className="max-w-sm text-center">
+                                    <p className="text-base font-semibold text-ink">
+                                        Price history unavailable
+                                    </p>
+                                    <p className="mt-1 text-sm text-ink-muted">{chartError}</p>
+                                    <button
+                                        onClick={() => setRefreshChart((n) => n + 1)}
+                                        className="mt-3 rounded border border-line px-3 py-1 text-sm font-semibold text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
+                                    >
+                                        Try again
+                                    </button>
+                                </div>
+                            </div>
                         ) : (
                             <PriceChart points={chartPoints} currency={currency} />
                         )}

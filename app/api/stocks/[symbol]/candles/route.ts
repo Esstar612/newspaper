@@ -5,7 +5,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const revalidate = 3600;
+// Daily candles change once a day, so an hour was 24x more often than the data
+// warrants. It matters here because there are 10 symbols x 4 ranges = 40 distinct
+// cache keys, each needing its own upstream call — making this the heaviest
+// caller of a provider that blocks on IP switching. See lib/stocks.ts.
+export const revalidate = 86400;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

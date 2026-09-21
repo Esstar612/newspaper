@@ -495,7 +495,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 - GitHub: [@Esstar612](https://github.com/Esstar612)
 - LinkedIn: [Star Olaojo](https://linkedin.com/in/star-olaojo/)
-- Portfolio: [https://esstar612.github.io/my_portfolio/](https://esstar612.github.io/my_portfolio/)
+- Portfolio: [portfolio-three-rose-44.vercel.app](https://portfolio-three-rose-44.vercel.app)
 
 ---
 

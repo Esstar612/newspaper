@@ -13,7 +13,6 @@ const uri: string = MONGODB_URI;
  * We cache the connection globally to avoid opening too many.
  */
 declare global {
-    // eslint-disable-next-line no-var
     var mongooseConnection: {
         conn: typeof mongoose | null;
         promise: Promise<typeof mongoose> | null;

@@ -15,7 +15,7 @@ fi
 base="${1:-HEAD}"
 [ $# -gt 0 ] && shift
 paths=("$@")
-[ ${#paths[@]} -eq 0 ] && paths=(app components lib models tests e2e CLAUDE.md)
+[ ${#paths[@]} -eq 0 ] && paths=(app components lib models tests e2e scripts .claude CLAUDE.md)
 
 diff_file="$(mktemp "${TMPDIR:-/tmp}/cursor-review.XXXXXX")"
 trap 'rm -f "$diff_file"' EXIT

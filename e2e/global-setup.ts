@@ -38,7 +38,7 @@ export function seedCandles(symbols: string[], now = Date.now()) {
         fetchedAt: new Date(now),
         points: Array.from({ length: 400 }, (_, d) => ({
             t: now - (399 - d) * day,
-            close: 100 + s * 10 + Math.sin(d / 10) * 5,
+            close: 100 + s * 10 + Math.sin(d / (6 + s)) * 5,
         })),
     }));
 }

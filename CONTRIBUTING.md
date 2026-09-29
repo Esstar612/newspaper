@@ -101,6 +101,7 @@ app/                 # Next.js app directory
 components/         # Reusable components
 lib/               # Utility functions
 models/            # Database models
+tests/             # Vitest suites and fixtures
 public/            # Static assets
 ```
 
@@ -112,9 +113,6 @@ npm test
 
 # Run tests in watch mode
 npm run test:watch
-
-# Run tests with coverage
-npm run test:coverage
 ```
 
 ## Questions?

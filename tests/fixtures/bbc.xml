@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+    <channel>
+        <title><![CDATA[BBC News]]></title>
+        <description><![CDATA[BBC News - Technology]]></description>
+        <link>https://www.bbc.co.uk/news/technology</link>
+        <generator>RSS for Node</generator>
+        <item>
+            <title><![CDATA[First test headline]]></title>
+            <description><![CDATA[First test summary.]]></description>
+            <link>https://www.bbc.co.uk/news/articles/test0001?at_medium=RSS&amp;at_campaign=rss</link>
+            <guid isPermaLink="false">https://www.bbc.co.uk/news/articles/test0001#0</guid>
+            <pubDate>Tue, 29 Sep 2026 04:30:13 GMT</pubDate>
+            <media:thumbnail width="240" height="135" url="https://ichef.bbci.co.uk/ace/standard/240/cpsprodpb/test/live/test0001.jpg"/>
+        </item>
+        <item>
+            <title><![CDATA[Item without a link]]></title>
+            <description><![CDATA[Skipped by the parser.]]></description>
+            <guid isPermaLink="false">https://www.bbc.co.uk/news/articles/test0002#0</guid>
+            <pubDate>Tue, 29 Sep 2026 03:00:00 GMT</pubDate>
+        </item>
+    </channel>
+</rss>

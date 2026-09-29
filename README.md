@@ -319,10 +319,13 @@ does not change the upstream request count.
 
 ## 🧪 Verifying it works
 
-There is no test runner configured. Type checking and linting are the automated
-checks, plus these endpoints for a quick smoke test:
+Vitest covers the feed parsing, the cleanup decision, and the weather API route.
+MSW stands in for every external API, so the suite never touches the network.
+Type checking and linting are the other automated checks, plus these endpoints
+for a quick smoke test:
 
 ```bash
+npm test             # vitest
 npx tsc --noEmit     # type check
 npm run lint         # eslint
 ```
@@ -402,6 +405,10 @@ newspaper/
 ├── models/
 │   ├── Article.ts
 │   └── CandleSeries.ts
+├── tests/
+│   ├── api/                        # Route handlers against MSW
+│   ├── lib/                        # Feeds and cleanup logic
+│   └── fixtures/                   # RSS samples
 ├── vercel.json                     # Three cron schedules
 └── tailwind.config.js              # Tokens, type scale, fonts
 ```

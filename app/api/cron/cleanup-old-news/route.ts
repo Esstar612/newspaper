@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
 import { MIN_KEEP, RETENTION_MS, planCleanup } from "@/lib/cleanup";
+import { cleanupSeries, runSeries, sendMetrics } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,8 @@ export const dynamic = "force-dynamic";
  */
 
 export async function GET(req: NextRequest) {
+    const now = new Date();
+
     try {
         // Optional security check
         const authHeader = req.headers.get("authorization");
@@ -31,7 +34,6 @@ export async function GET(req: NextRequest) {
 
         await connectDB();
 
-        const now = new Date();
         const cutoff = new Date(now.getTime() - RETENTION_MS);
 
         const totalBefore = await Article.countDocuments();
@@ -43,6 +45,10 @@ export async function GET(req: NextRequest) {
         const plan = planCleanup({ total: totalBefore, newestAt: newestArticle?.createdAt, now });
 
         if (plan.action === "skip") {
+            await sendMetrics([
+                ...runSeries("cleanup-old-news", "skipped", now),
+                ...cleanupSeries({ total: totalBefore }, now),
+            ]);
             return NextResponse.json({
                 status: "skipped",
                 reason: plan.reason,
@@ -72,6 +78,11 @@ export async function GET(req: NextRequest) {
             .select("createdAt")
             .lean();
 
+        await sendMetrics([
+            ...runSeries("cleanup-old-news", "success", now),
+            ...cleanupSeries({ deleted: deleteResult.deletedCount, total: totalAfter }, now),
+        ]);
+
         return NextResponse.json({
             status: "success",
             timestamp: now,
@@ -91,6 +102,7 @@ export async function GET(req: NextRequest) {
             },
         });
     } catch (e: unknown) {
+        await sendMetrics(runSeries("cleanup-old-news", "failed", now));
         return NextResponse.json(
             { error: e instanceof Error ? e.message : "Cleanup failed" },
             { status: 500 }

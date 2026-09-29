@@ -2,7 +2,7 @@
 
 ## Working rules
 - Show core code and where it will go before writing it.
-- Keep PRs small and stacked, one step per PR.
+- Size each PR so a reviewer can comfortably review it. Group related changes into one PR instead of opening one per small fix.
 - Keep comments near zero. Add one only when the code can't say it.
 - No attribution or co-author lines in BUILD_LOG.md or commit messages.
 - No em dashes anywhere.

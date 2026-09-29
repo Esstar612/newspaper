@@ -1,0 +1,42 @@
+[
+    {
+        "name": "[newspaper] ingest-news did not run",
+        "type": "query alert",
+        "query": "sum(last_25h):sum:newspaper.cron.run{env:production,job:ingest-news}.as_count() < 1",
+        "message": "The news ingest has not reported a run in 25 hours, so no new articles are arriving. Check the Vercel cron logs, then run it by hand: GET /api/cron/ingest-news?force=1 with the header Authorization: Bearer <CRON_SECRET>.",
+        "tags": ["service:newspaper", "managed-by:script"],
+        "options": { "thresholds": { "critical": 1 }, "require_full_window": false }
+    },
+    {
+        "name": "[newspaper] refresh-candles did not run",
+        "type": "query alert",
+        "query": "sum(last_25h):sum:newspaper.cron.run{env:production,job:refresh-candles}.as_count() < 1",
+        "message": "The price history refresh has not reported a run in 25 hours, so charts are going stale. Check the Vercel cron logs for /api/cron/refresh-candles.",
+        "tags": ["service:newspaper", "managed-by:script"],
+        "options": { "thresholds": { "critical": 1 }, "require_full_window": false }
+    },
+    {
+        "name": "[newspaper] cleanup-old-news did not run",
+        "type": "query alert",
+        "query": "sum(last_25h):sum:newspaper.cron.run{env:production,job:cleanup-old-news}.as_count() < 1",
+        "message": "The article cleanup has not reported a run in 25 hours, so the collection is growing past its retention. Check the Vercel cron logs for /api/cron/cleanup-old-news.",
+        "tags": ["service:newspaper", "managed-by:script"],
+        "options": { "thresholds": { "critical": 1 }, "require_full_window": false }
+    },
+    {
+        "name": "[newspaper] a cron job failed",
+        "type": "query alert",
+        "query": "sum(last_25h):sum:newspaper.cron.run{env:production,status:failed} by {job}.as_count() > 0",
+        "message": "{{job.name}} reported a failed run. Check its Vercel logs. This alert clears on its own 25 hours after the failure, even if a re-run succeeds, or it can be resolved by hand.",
+        "tags": ["service:newspaper", "managed-by:script"],
+        "options": { "thresholds": { "critical": 0 }, "require_full_window": false }
+    },
+    {
+        "name": "[newspaper] a news feed returned nothing",
+        "type": "query alert",
+        "query": "max(last_25h):max:newspaper.ingest.feed.items{env:production} by {source,category} < 1",
+        "message": "{{source.name}} {{category.name}} returned no articles on every ingest in the last 25 hours. The feed URL may have moved or the feed may be down.",
+        "tags": ["service:newspaper", "managed-by:script"],
+        "options": { "thresholds": { "critical": 1 }, "require_full_window": false }
+    }
+]

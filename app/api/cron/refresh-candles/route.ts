@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { CandleSeries } from "@/models/CandleSeries";
 import { SYMBOL_LIST, fetchCandles, HISTORY_DAYS, type CandlePoint } from "@/lib/stocks";
+import { candlesSeries, runSeries, sendMetrics } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,8 @@ export const maxDuration = 60;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function GET(req: NextRequest) {
+    const now = new Date();
+
     try {
         const authHeader = req.headers.get("authorization");
         const cronSecret = process.env.CRON_SECRET;
@@ -30,7 +33,6 @@ export async function GET(req: NextRequest) {
 
         await connectDB();
 
-        const now = new Date();
         const results: Array<{ symbol: string; points: number; error?: string }> = [];
         const ops: Parameters<typeof CandleSeries.bulkWrite>[0] = [];
 
@@ -65,9 +67,13 @@ export async function GET(req: NextRequest) {
 
         const result = ops.length ? await CandleSeries.bulkWrite(ops, { ordered: false }) : null;
         const failed = results.filter((r) => r.error);
+        const status = failed.length === SYMBOL_LIST.length ? "failed" : "success";
+        const symbolsOk = results.filter((r) => r.points > 0).length;
+
+        await sendMetrics([...runSeries("refresh-candles", status, now), ...candlesSeries({ symbolsOk }, now)]);
 
         return NextResponse.json({
-            status: failed.length === SYMBOL_LIST.length ? "failed" : "success",
+            status,
             timestamp: now,
             symbols: results,
             failedSymbols: failed.length,
@@ -78,6 +84,7 @@ export async function GET(req: NextRequest) {
             },
         });
     } catch (e: unknown) {
+        await sendMetrics(runSeries("refresh-candles", "failed", now));
         return NextResponse.json(
             { error: e instanceof Error ? e.message : "Candle refresh failed" },
             { status: 500 }

@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
 import { FEEDS, fetchFeed, mergeArticles, type FeedResult } from "@/lib/feeds";
 import { SKIP_WINDOW_MS, shouldSkipIngest } from "@/lib/ingest";
+import { ingestSeries, runSeries, sendMetrics } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
+    const now = new Date();
+
     try {
         const authHeader = req.headers.get("authorization");
         const cronSecret = process.env.CRON_SECRET;
@@ -33,8 +36,6 @@ export async function GET(req: NextRequest) {
 
         await connectDB();
 
-        const now = new Date();
-
         // The guard stops an accidental re-trigger. The window is well under a day
         // because createdAt is stamped after the feeds are fetched, so a 24h window
         // skips the next day's run. ?force=1 applies a fix without waiting for midnight.
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest) {
                 .lean();
 
             if (lastArticle && shouldSkipIngest(lastArticle.createdAt, now)) {
+                await sendMetrics(runSeries("ingest-news", "skipped", now));
                 return NextResponse.json({
                     status: "skipped",
                     message: "News was updated recently (pass ?force=1 to override)",
@@ -79,9 +81,13 @@ export async function GET(req: NextRequest) {
         }));
 
         const failed = feeds.filter((f) => f.error);
+        const status = failed.length === FEEDS.length ? "failed" : "success";
+        const upserted = result?.upsertedCount ?? 0;
+
+        await sendMetrics([...runSeries("ingest-news", status, now), ...ingestSeries({ feeds, upserted }, now)]);
 
         return NextResponse.json({
-            status: failed.length === FEEDS.length ? "failed" : "success",
+            status,
             forced: force,
             timestamp: now,
             feeds,
@@ -91,13 +97,14 @@ export async function GET(req: NextRequest) {
                 unique: unique.length,
             },
             db: {
-                upserted: result?.upsertedCount ?? 0,
+                upserted,
                 matched: result?.matchedCount ?? 0,
                 modified: result?.modifiedCount ?? 0,
             },
             nextUpdate: new Date(now.getTime() + SKIP_WINDOW_MS),
         });
     } catch (e: unknown) {
+        await sendMetrics(runSeries("ingest-news", "failed", now));
         return NextResponse.json(
             { error: e instanceof Error ? e.message : "Ingest failed" },
             { status: 500 }

@@ -2,7 +2,7 @@
 
 ## Working rules
 - Show core code and where it will go before writing it.
-- Keep PRs small and stacked, one step per PR.
+- Keep PRs small, one step per PR. Independent changes branch from `main`. Dependent steps go out as a stack: each PR is based on the previous step's branch, starts its description with "Stacked on #N", and is merged bottom-up with merge commits, not squash.
 - Keep comments near zero. Add one only when the code can't say it.
 - No attribution or co-author lines in BUILD_LOG.md or commit messages.
 - No em dashes anywhere.

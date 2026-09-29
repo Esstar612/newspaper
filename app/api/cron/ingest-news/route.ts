@@ -3,13 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
 import { FEEDS, fetchFeed, mergeArticles, type FeedResult } from "@/lib/feeds";
+import { SKIP_WINDOW_MS, shouldSkipIngest } from "@/lib/ingest";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // All feeds run concurrently against different hosts, so this is headroom, not a target.
 export const maxDuration = 60;
-
-const SKIP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export async function GET(req: NextRequest) {
     try {
@@ -36,16 +35,16 @@ export async function GET(req: NextRequest) {
 
         const now = new Date();
 
-        // The scheduled run is daily; the guard stops an accidental re-trigger from
-        // burning through provider quota. ?force=1 exists so a fix can be applied
-        // without waiting for the next midnight run.
+        // The guard stops an accidental re-trigger. The window is well under a day
+        // because createdAt is stamped after the feeds are fetched, so a 24h window
+        // skips the next day's run. ?force=1 applies a fix without waiting for midnight.
         if (!force) {
             const lastArticle = await Article.findOne()
                 .sort({ createdAt: -1 })
                 .select("createdAt")
                 .lean();
 
-            if (lastArticle && lastArticle.createdAt > new Date(now.getTime() - SKIP_WINDOW_MS)) {
+            if (lastArticle && shouldSkipIngest(lastArticle.createdAt, now)) {
                 return NextResponse.json({
                     status: "skipped",
                     message: "News was updated recently (pass ?force=1 to override)",

@@ -101,7 +101,7 @@
 
 Before you begin, ensure you have:
 
-- **Node.js** 18.x or higher
+- **Node.js** 20.9 or higher
 - **npm** or **yarn**
 - **MongoDB Atlas** account (free tier works!)
 - API keys for:
@@ -129,28 +129,10 @@ npm install
 
 ### 3. Set up environment variables
 
-Create a `.env.local` file in the root directory:
+Copy the example file and fill in your keys:
 
-```env
-# MongoDB
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/newspaper
-
-# News APIs — optional; the RSS pipeline needs neither.
-# Used only by the dev-only manual ingest at /api/admin/ingest-news.
-NEWS_API_KEY=your_newsapi_key
-NYT_API_KEY=your_nyt_api_key
-
-# Weather API
-WEATHER_API_KEY=your_openweather_key
-
-# Stock Market API
-MARKET_DATA_API_TOKEN=your_market_data_key
-
-# Cron security (optional, but the cron endpoints are open without it)
-CRON_SECRET=your_secret_key_here
-
-# Guards the one-off admin backfill routes
-ADMIN_INGEST_TOKEN=your_admin_token_here
+```bash
+cp .env.example .env.local
 ```
 
 ### 4. Run the development server
@@ -447,18 +429,6 @@ drops below a floor.
 
 ---
 
-## 🤝 Contributing
-
-Contributions are what make the open-source community amazing! Any contributions you make are **greatly appreciated**.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
 ## 🐛 Known Issues
 
 - **Live quotes can be briefly unavailable.** The market data provider allows one
@@ -468,9 +438,6 @@ Contributions are what make the open-source community amazing! Any contributions
 - **Cron timing is approximate.** Vercel's Hobby plan runs jobs once per day with
   up to ±59 minutes of jitter.
 - **Prices are delayed**, not real-time — a free-tier limitation, stated in the UI.
-- `PROJECT_SUMMARY.md` sits in the working tree but is deliberately untracked,
-  so it is not version-controlled and can drift. It covers architecture and
-  operations; this README is the public reference.
 
 See [open issues](https://github.com/Esstar612/newspaper/issues) for a full list of known issues.
 

@@ -17,9 +17,9 @@ Report real issues only, ranked by severity:
 4. RAG: retrieval not measured separately from answer quality, citations that could point to articles the answer didn't use, costs not taken from current pricing pages, embeddings that go stale when articles change.
 5. Internal consistency: parts of the plan that contradict each other, or stale text left over from an earlier version.
 6. Dropped requests: any required change from the latest review in docs/reviews/ that the plan doesn't include.
-7. CLAUDE.md rules: core code shown for placement before it is written, commands given rather than run, small stacked PRs, near-zero comments, no attribution in BUILD_LOG or commits, no em dashes.
+7. CLAUDE.md rules: core code shown for placement before it is written, sizing tier stated, code review loop included before commit, small stacked PRs, near-zero comments, no attribution in BUILD_LOG or commits, no em dashes.
 8. Security and cost: API keys exposed or committed, CI minutes, paid API calls.
-9. Missing tests.
+9. Missing tests: any step that does not name the test that proves it, or a test that is not written before the code.
 
 If the plan is sound, say so plainly. No invented nitpicks. No em dashes.
 

@@ -69,7 +69,7 @@ const WeatherPieChart: React.FC<WeatherPieChartProps> = ({ data }) => {
                   cx="50%"
                   cy="50%"
                   outerRadius={150}
-                  label={(props: any) => {
+                  label={(props) => {
                     const percentage = total ? ((props.value / total) * 100).toFixed(1) : 0;
                     return (
                         <text
@@ -104,7 +104,7 @@ const WeatherPieChart: React.FC<WeatherPieChartProps> = ({ data }) => {
                   }}
                   itemStyle={{ color: "var(--ink)" }}
                   labelStyle={{ color: "var(--ink-muted)" }}
-                  formatter={(value: any) => {
+                  formatter={(value) => {
                     const numValue = typeof value === 'number' ? value : 0;
                     const percentage = total ? ((numValue / total) * 100).toFixed(1) : 0;
                     return [`${numValue} occurrences (${percentage}%)`, "Count"];
@@ -112,7 +112,7 @@ const WeatherPieChart: React.FC<WeatherPieChartProps> = ({ data }) => {
               />
               <Legend
                   wrapperStyle={{ color: "var(--ink)" }}
-                  formatter={(value: string, entry: any) => {
+                  formatter={(value: string, entry) => {
                     const percentage = total && entry?.payload?.value
                         ? ((entry.payload.value / total) * 100).toFixed(1)
                         : 0;

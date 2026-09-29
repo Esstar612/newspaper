@@ -83,7 +83,7 @@ const HumidityLineGraph: React.FC<HumidityLineGraphProps> = ({ data }) => {
                             }}
                             itemStyle={{ color: "var(--ink)" }}
                             labelStyle={{ color: "var(--ink-muted)" }}
-                            formatter={(value: any) => [`${value ?? 0}%`, "Humidity"]}
+                            formatter={(value) => [`${value ?? 0}%`, "Humidity"]}
                         />
                         <Legend
                             wrapperStyle={{ color: "var(--ink)" }}

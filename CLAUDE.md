@@ -25,8 +25,8 @@ State the tier at the start of each task. When unsure, pick the higher one.
 6. With the final plan, show the final verdict verbatim, the findings applied, and the findings rejected with the reason for each.
 
 ## Build and code review loop
-1. Write each step's test first and confirm it fails, then implement until it passes. Until a test runner exists, the first feature plan sets up Vitest (and MSW or Playwright when a step needs them).
-2. Run the tests, `npx tsc --noEmit`, and `npx eslint .`, and fix any failures.
+1. Write each step's test first and confirm it fails, then implement until it passes.
+2. Run `npm test`, `npx tsc --noEmit`, and `npx eslint .`, and fix any failures.
 3. Run `scripts/review.sh --plan docs/plans/<file>` (small fixes have no plan, so they omit `--plan`). Fix every correctness, rule, test, TypeScript, and plan-drift finding, then run it again. Stop at "No findings." or when only nitpicks remain, or after 3 rounds.
 4. For UI changes, run `npm run dev` and open each affected page in the browser. Confirm it renders with real data and the console shows no errors.
 5. Stop and ask when a finding needs the user's decision.

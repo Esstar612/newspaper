@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import {
     Button,
@@ -90,12 +90,42 @@ export default function WeatherPage() {
 
     const pageBackground = useMemo(() => pickBackground(data?.condition ?? ""), [data?.condition]);
 
-    // Only autofill search box, don't load weather
-    useEffect(() => {
-        loadUserLocation();
+    const searchByCoords = useCallback(async (lat: number, lon: number) => {
+        try {
+            setError("");
+            setLoading(true);
+
+            const [wRes, fRes] = await Promise.all([
+                fetch(`/api/weather?lat=${lat}&lon=${lon}`, { cache: "no-store" }),
+                fetch(`/api/forecast?lat=${lat}&lon=${lon}`, { cache: "no-store" }),
+            ]);
+
+            const wJson: unknown = await wRes.json();
+            const fJson: unknown = await fRes.json();
+
+            if (!wRes.ok || !wJson || typeof wJson !== "object") {
+                throw new Error("Failed to load weather.");
+            }
+            if (!fRes.ok || !fJson || typeof fJson !== "object") {
+                throw new Error("Failed to load forecast.");
+            }
+
+            setData(wJson as WeatherUI);
+            setForecast(fJson as ForecastUI);
+
+            if (wJson && typeof wJson === "object" && "location" in wJson) {
+                setQ(String(wJson.location));
+            }
+        } catch (e: unknown) {
+            setData(null);
+            setForecast(null);
+            setError(e instanceof Error ? e.message : "Failed to load weather.");
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
-    async function loadUserLocation() {
+    const loadUserLocation = useCallback(() => {
         if (!navigator.geolocation) return;
 
         setGeolocating(true);
@@ -138,7 +168,11 @@ export default function WeatherPage() {
             () => setGeolocating(false),
             { timeout: 10000 }
         );
-    }
+    }, [searchByCoords]);
+
+    useEffect(() => {
+        loadUserLocation();
+    }, [loadUserLocation]);
 
     // Use this function for the "My Location" button
     async function useMyLocation() {
@@ -159,41 +193,6 @@ export default function WeatherPage() {
             () => setGeolocating(false),
             { timeout: 10000 }
         );
-    }
-
-    async function searchByCoords(lat: number, lon: number) {
-        try {
-            setError("");
-            setLoading(true);
-
-            const [wRes, fRes] = await Promise.all([
-                fetch(`/api/weather?lat=${lat}&lon=${lon}`, { cache: "no-store" }),
-                fetch(`/api/forecast?lat=${lat}&lon=${lon}`, { cache: "no-store" }),
-            ]);
-
-            const wJson: unknown = await wRes.json();
-            const fJson: unknown = await fRes.json();
-
-            if (!wRes.ok || !wJson || typeof wJson !== "object") {
-                throw new Error("Failed to load weather.");
-            }
-            if (!fRes.ok || !fJson || typeof fJson !== "object") {
-                throw new Error("Failed to load forecast.");
-            }
-
-            setData(wJson as WeatherUI);
-            setForecast(fJson as ForecastUI);
-
-            if (wJson && typeof wJson === "object" && "location" in wJson) {
-                setQ(String(wJson.location));
-            }
-        } catch (e: unknown) {
-            setData(null);
-            setForecast(null);
-            setError(e instanceof Error ? e.message : "Failed to load weather.");
-        } finally {
-            setLoading(false);
-        }
     }
 
     async function search(cityName: string) {
@@ -262,7 +261,7 @@ export default function WeatherPage() {
         search(suggestion.name);
     };
 
-    const forecastList = forecast?.list ?? [];
+    const forecastList = useMemo(() => forecast?.list ?? [], [forecast?.list]);
 
     const weatherConditions = useMemo(() => {
         const acc: Record<string, number> = {};

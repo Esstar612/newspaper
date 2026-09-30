@@ -1,6 +1,3 @@
-// scripts/datadog-monitors.mjs
-// Creates or updates the monitors in datadog/monitors.json. Run by hand, never in CI:
-//   DD_BEARER_TOKEN=... [DD_SITE=datadoghq.com] [DD_NOTIFY=@you@example.com] node scripts/datadog-monitors.mjs
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 

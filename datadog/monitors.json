@@ -24,6 +24,14 @@
         "options": { "thresholds": { "critical": 1 }, "require_full_window": false }
     },
     {
+        "name": "[newspaper] sync-vectors did not run",
+        "type": "query alert",
+        "query": "sum(last_25h):sum:newspaper.cron.run{env:production,job:sync-vectors}.as_count() < 1",
+        "message": "The Pinecone sync has not reported a run in 25 hours, so new articles are not searchable. Check the Vercel cron logs for /api/cron/sync-vectors.",
+        "tags": ["service:newspaper", "managed-by:script"],
+        "options": { "thresholds": { "critical": 1 }, "require_full_window": false }
+    },
+    {
         "name": "[newspaper] a cron job failed",
         "type": "query alert",
         "query": "sum(last_25h):sum:newspaper.cron.run{env:production,status:failed} by {job}.as_count() > 0",

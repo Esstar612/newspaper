@@ -3,6 +3,7 @@ import { delay, http, HttpResponse } from "msw";
 import { server } from "../msw";
 import {
     candlesSeries,
+    vectorsSeries,
     cleanupSeries,
     ingestSeries,
     runSeries,
@@ -99,6 +100,16 @@ describe("series builders", () => {
             gaugeOf("newspaper.articles.total", 312),
         ]);
         expect(cleanupSeries({ total: 150 }, AT)).toEqual([gaugeOf("newspaper.articles.total", 150)]);
+    });
+});
+
+describe("vectorsSeries", () => {
+    it("emits the upserted and pending gauges", () => {
+        vi.stubEnv("VERCEL_ENV", "production");
+        expect(vectorsSeries({ upserted: 96, pending: 12 }, AT).map((s) => [s.metric, s.type, s.points[0].value])).toEqual([
+            ["newspaper.vectors.upserted", 3, 96],
+            ["newspaper.vectors.pending", 3, 12],
+        ]);
     });
 });
 

@@ -46,13 +46,22 @@ const sync = (monitors = loadMonitors(FILE)) =>
     syncMonitors(monitors, { site: "datadoghq.com", token: "test-token", log: (line: string) => logs.push(line) });
 
 describe("monitor definitions", () => {
-    it("defines five monitors with unique names", () => {
-        expect(raw).toHaveLength(5);
-        expect(new Set(raw.map((m) => m.name)).size).toBe(5);
+    it("defines monitors with unique names", () => {
+        expect(raw.length).toBeGreaterThan(0);
+        expect(new Set(raw.map((m) => m.name)).size).toBe(raw.length);
     });
 
     it.each(raw.map((m) => [m.name, m.query]))("%s has a well-formed query", (_, query) => {
         expect(query).toMatch(QUERY_SHAPE);
+    });
+
+    it("has a missing-run monitor for every scheduled cron", () => {
+        const crons = (JSON.parse(readFileSync(new URL("../../vercel.json", import.meta.url), "utf8")) as {
+            crons: Array<{ path: string }>;
+        }).crons.map((c) => c.path.split("/").pop());
+        for (const job of crons) {
+            expect(raw.some((m) => m.query.includes(`job:${job}}`) && m.query.endsWith("< 1"))).toBe(true);
+        }
     });
 
     it("only the ingest message mentions force=1", () => {
@@ -71,7 +80,7 @@ describe("syncMonitors", () => {
     it("creates every monitor when none exist, with the bearer token", async () => {
         await sync();
         const writes = calls.filter((c) => c.method !== "GET");
-        expect(writes.map((c) => c.method)).toEqual(["POST", "POST", "POST", "POST", "POST"]);
+        expect(writes.map((c) => c.method)).toEqual(raw.map(() => "POST"));
         expect(calls.every((c) => c.auth === "Bearer test-token")).toBe(true);
         expect(writes[0].body).toMatchObject({ name: raw[0].name, type: "query alert", query: raw[0].query });
         expect(logs[0]).toMatch(/^created \d+ \[newspaper\] ingest-news did not run$/);
@@ -84,14 +93,14 @@ describe("syncMonitors", () => {
         expect(put.url.pathname).toBe("/api/v1/monitor/42");
         expect(put.body).toMatchObject({ name: "[newspaper] a cron job failed" });
         expect(put.body).not.toHaveProperty("type");
-        expect(calls.filter((c) => c.method === "POST")).toHaveLength(4);
+        expect(calls.filter((c) => c.method === "POST")).toHaveLength(raw.length - 1);
     });
 
     it("does not update a monitor whose name only contains the target name", async () => {
         existing = [{ id: 7, name: "[newspaper] ingest-news did not run (old)" }];
         await sync();
         expect(calls.some((c) => c.method === "PUT")).toBe(false);
-        expect(calls.filter((c) => c.method === "POST")).toHaveLength(5);
+        expect(calls.filter((c) => c.method === "POST")).toHaveLength(raw.length);
     });
 
     it("stops with the status and body when Datadog rejects a write", async () => {

@@ -1,30 +1,17 @@
-// app/api/cron/cleanup-old-news/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
 import { MIN_KEEP, RETENTION_MS, planCleanup } from "@/lib/cleanup";
 import { cleanupSeries, runSeries, sendMetrics } from "@/lib/metrics";
+import { deleteVectors } from "@/lib/vectors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/**
- * Cleanup strategy:
- * - Delete articles older than 7 days, so the collection does not grow forever.
- * - But never at the cost of emptying the site.
- *
- * This job and the ingest run independently, and Vercel documents cron delivery
- * as best effort with no retry on failure. Deleting purely on an age cutoff meant
- * that if ingest stopped working — a dead feed, a missed run, an expired key —
- * this job would keep deleting on schedule and the site would be empty within a
- * week, with nothing to indicate why. Two guards prevent that.
- */
 
 export async function GET(req: NextRequest) {
     const now = new Date();
 
     try {
-        // Optional security check
         const authHeader = req.headers.get("authorization");
         const cronSecret = process.env.CRON_SECRET;
 
@@ -59,8 +46,6 @@ export async function GET(req: NextRequest) {
             });
         }
 
-        // Oldest first, capped by the budget, so the newest MIN_KEEP always survive
-        // even if every one of them is past the retention cutoff.
         const expired = await Article.find({ createdAt: { $lt: cutoff } })
             .sort({ createdAt: 1 })
             .limit(plan.budget)
@@ -70,6 +55,12 @@ export async function GET(req: NextRequest) {
         const deleteResult = expired.length
             ? await Article.deleteMany({ _id: { $in: expired.map((d) => d._id) } })
             : { deletedCount: 0 };
+
+        try {
+            await deleteVectors(expired.map((d) => String(d._id)));
+        } catch (e) {
+            console.error(`Pinecone delete failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
 
         const oldExpiredCount = await Article.countDocuments({ createdAt: { $lt: cutoff } });
         const totalAfter = await Article.countDocuments();
@@ -90,7 +81,6 @@ export async function GET(req: NextRequest) {
                 totalBefore,
                 totalAfter,
                 deleted: deleteResult.deletedCount,
-                // Left behind because deleting them would have breached the floor.
                 keptPastRetention: oldExpiredCount,
                 floor: MIN_KEEP,
             },

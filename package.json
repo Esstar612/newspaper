@@ -2,6 +2,9 @@
   "name": "newspaper",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,6 +14,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@pinecone-database/pinecone": "^9.0.0",
     "fast-xml-parser": "^5.11.0",
     "mongoose": "^8.9.4",
     "next": "^16.1.6",

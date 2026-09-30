@@ -1,9 +1,4 @@
-// lib/metrics.ts
-// Cron metrics for Datadog. Vercel Hobby has no log drains, so the functions push
-// to the Metrics API themselves. A missing key or a Datadog outage must never fail
-// a cron run, so sending is best effort.
-
-export type Job = "ingest-news" | "refresh-candles" | "cleanup-old-news";
+export type Job = "ingest-news" | "refresh-candles" | "cleanup-old-news" | "sync-vectors";
 export type RunStatus = "success" | "skipped" | "failed";
 
 export type Series = {
@@ -50,6 +45,11 @@ export const candlesSeries = (result: { symbolsOk: number }, at: Date): Series[]
 export const cleanupSeries = (result: { deleted?: number; total: number }, at: Date): Series[] => [
     ...(result.deleted === undefined ? [] : [series("newspaper.cleanup.deleted", GAUGE, result.deleted, at)]),
     series("newspaper.articles.total", GAUGE, result.total, at),
+];
+
+export const vectorsSeries = (result: { upserted: number; pending: number }, at: Date): Series[] => [
+    series("newspaper.vectors.upserted", GAUGE, result.upserted, at),
+    series("newspaper.vectors.pending", GAUGE, result.pending, at),
 ];
 
 export async function sendMetrics(payload: Series[], { timeoutMs = 3000 } = {}): Promise<void> {

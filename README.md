@@ -47,7 +47,7 @@
 - Prices are delayed, and the UI says so rather than claiming otherwise
 
 ### 🤖 Automated Data Management
-- **Three cron jobs**: news ingestion, price-history refresh, and database cleanup
+- **Four cron jobs**: news ingestion, article vectors for search, price-history refresh, and database cleanup
 - URL-normalised deduplication that *merges* categories, so an article appearing in two feeds keeps both
 - Cleanup that refuses to run when ingest has stopped, so a broken feed can never empty the site
 - Compound MongoDB indexes on the fields actually queried
@@ -101,7 +101,7 @@
 
 Before you begin, ensure you have:
 
-- **Node.js** 20.9 or higher
+- **Node.js** 22 or higher
 - **npm** or **yarn**
 - **MongoDB Atlas** account (free tier works!)
 - API keys for:
@@ -195,7 +195,7 @@ One stored year serves every chart range, so 1M/3M/6M/1Y are slices of the same 
 
 ## 🔄 Cron Jobs
 
-Three scheduled jobs keep the data current. Vercel's Hobby plan allows one run per
+Four scheduled jobs keep the data current. Vercel's Hobby plan allows one run per
 day each, with up to ±59 minutes of scheduling jitter.
 
 ### News ingestion — `0 0 * * *`
@@ -206,6 +206,11 @@ URL-normalised deduplication that merges categories rather than overwriting them
 
 Per-feed counts are returned in the response, so a feed that dies is visible
 rather than silently producing an empty section.
+
+### Article vectors (`0 1 * * *`)
+Embeds new or changed articles into a Pinecone index (`llama-text-embed-v2`), at most
+576 a run, so search can find them. Does nothing until `PINECONE_API_KEY` and
+`PINECONE_INDEX_HOST` are set. Cleanup deletes an article's vector with the article.
 
 ### Price history — `0 2 * * *`
 Fetches a year of daily closes for all ten symbols and upserts them into MongoDB.
@@ -281,7 +286,7 @@ does not change the upstream request count.
 
 5. **Verify Cron Jobs**
   - Go to Project Settings → Crons
-  - You should see 3 cron jobs listed
+  - You should see 4 cron jobs listed
 
 6. **Populate price history**
   - The chart reads from MongoDB, which starts empty
@@ -391,7 +396,7 @@ newspaper/
 │   ├── api/                        # Route handlers against MSW
 │   ├── lib/                        # Feeds and cleanup logic
 │   └── fixtures/                   # RSS samples
-├── vercel.json                     # Three cron schedules
+├── vercel.json                     # Four cron schedules
 └── tailwind.config.js              # Tokens, type scale, fonts
 ```
 

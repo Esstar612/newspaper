@@ -57,6 +57,7 @@ beforeEach(() => {
     vi.stubEnv("DD_API_KEY", "test-key");
     vi.stubEnv("DD_SITE", "");
     vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("PINECONE_API_KEY", "");
     posted = [];
     errors = vi.spyOn(console, "error").mockImplementation(() => {});
     db.connectDB.mockReset().mockResolvedValue(undefined);
@@ -198,6 +199,42 @@ describe("cleanup-old-news", () => {
         expect(runTags()).toEqual([["env:production", "job:cleanup-old-news", "status:success"]]);
         expect(gauge("newspaper.cleanup.deleted")).toBe(20);
         expect(gauge("newspaper.articles.total")).toBe(380);
+    });
+
+    it("deletes the removed articles' vectors", async () => {
+        vi.stubEnv("PINECONE_API_KEY", "test-key");
+        vi.stubEnv("PINECONE_INDEX_HOST", "newspaper-articles-test.svc.pinecone.io");
+        const deleted: string[][] = [];
+        server.use(
+            http.post("https://newspaper-articles-test.svc.pinecone.io/vectors/delete", async ({ request }) => {
+                deleted.push(((await request.json()) as { ids: string[] }).ids);
+                return HttpResponse.json({});
+            })
+        );
+        db.newest = { createdAt: new Date() };
+        db.counts = [400, 0, 380];
+        db.expired = Array.from({ length: 3 }, (_, i) => ({ _id: `id${i}` }));
+        db.deleteMany.mockResolvedValue({ deletedCount: 3 });
+        await cleanup(request("/api/cron/cleanup-old-news"));
+        expect(deleted).toEqual([["id0", "id1", "id2"]]);
+    });
+
+    it("stays a success when Pinecone rejects the delete", async () => {
+        vi.stubEnv("PINECONE_API_KEY", "test-key");
+        vi.stubEnv("PINECONE_INDEX_HOST", "newspaper-articles-test.svc.pinecone.io");
+        server.use(
+            http.post("https://newspaper-articles-test.svc.pinecone.io/vectors/delete", () =>
+                HttpResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 })
+            )
+        );
+        db.newest = { createdAt: new Date() };
+        db.counts = [400, 0, 380];
+        db.expired = [{ _id: "id0" }];
+        db.deleteMany.mockResolvedValue({ deletedCount: 1 });
+        const res = await cleanup(request("/api/cron/cleanup-old-news"));
+        expect((await res.json()).status).toBe("success");
+        expect(runTags()).toEqual([["env:production", "job:cleanup-old-news", "status:success"]]);
+        expect(errors).toHaveBeenCalledTimes(1);
     });
 
     it("reports a skip with the current total", async () => {

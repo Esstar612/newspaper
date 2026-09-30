@@ -28,6 +28,8 @@ export default defineConfig({
             MONGODB_URI: process.env.MONGODB_URI,
             MARKET_DATA_API_TOKEN: "",
             WEATHER_API_KEY: "",
+            PINECONE_API_KEY: "",
+            PINECONE_INDEX_HOST: "",
         },
     },
 });

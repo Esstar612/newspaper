@@ -154,7 +154,12 @@ describe("/api/ask", () => {
             truncated: false,
             usage: { input_tokens: 1200, output_tokens: 80 },
         });
-        expect(claude[0]).toMatchObject({ model: "claude-sonnet-5", max_tokens: 1024 });
+        expect(claude[0]).toMatchObject({
+            model: "claude-sonnet-5",
+            max_tokens: 1024,
+            output_config: { effort: "low" },
+            thinking: { type: "disabled" },
+        });
         expect((claude[0].messages as Array<{ content: unknown[] }>)[0].content).toHaveLength(3);
         expect((searches[0].query as { filter: unknown }).filter).toEqual({ tags: { $in: ["business"] } });
         expect(outcomes()).toEqual(["outcome:answered"]);

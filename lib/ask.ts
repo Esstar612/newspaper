@@ -114,6 +114,8 @@ export function createAskHandler({
                 }).messages.create({
                     model: process.env.ASK_MODEL || "claude-sonnet-5",
                     max_tokens: 1024,
+                    output_config: { effort: "low" },
+                    thinking: { type: "disabled" },
                     system: SYSTEM_PROMPT,
                     messages: buildMessages(input.q, articles),
                 });

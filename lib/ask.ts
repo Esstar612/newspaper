@@ -76,7 +76,9 @@ export function createAskHandler({
             const hits = await searchVectors(input.q, { category: input.category, maxRetries });
             const ids = hits.map((h) => h.id);
             const found = ids.length
-                ? await Article.find({ _id: { $in: ids } }).select({ title: 1, description: 1, url: 1 }).lean()
+                ? await Article.find({ _id: { $in: ids } })
+                      .select({ title: 1, description: 1, url: 1, imageUrl: 1, source: 1, publishedAt: 1, tags: 1 })
+                      .lean()
                 : [];
             const byId = new Map(found.map((d) => [String(d._id), d]));
             const stale = ids.filter((id) => !byId.has(id));
@@ -89,9 +91,22 @@ export function createAskHandler({
             }
 
             const articles: AnswerArticle[] = [];
+            const related = [];
             for (const id of ids) {
                 const d = byId.get(id);
-                if (d) articles.push({ id, url: d.url, title: d.title, description: d.description ?? "" });
+                if (!d) continue;
+                const description = d.description ?? "";
+                articles.push({ id, url: d.url, title: d.title, description });
+                related.push({
+                    _id: id,
+                    title: d.title,
+                    description,
+                    url: d.url,
+                    imageUrl: d.imageUrl ?? "",
+                    source: d.source,
+                    publishedAt: d.publishedAt,
+                    tags: d.tags ?? [],
+                });
             }
 
             if (articles.length === 0) {
@@ -99,6 +114,7 @@ export function createAskHandler({
                 return NextResponse.json({
                     segments: [{ text: NO_MATCH, cites: [] }],
                     sources: [],
+                    related: [],
                     refused: false,
                     truncated: false,
                     noMatch: true,
@@ -125,6 +141,7 @@ export function createAskHandler({
             return NextResponse.json({
                 segments: answer.segments,
                 sources: answer.sources,
+                related,
                 refused: answer.refused,
                 truncated: answer.truncated,
                 usage: { input_tokens: message.usage.input_tokens, output_tokens: message.usage.output_tokens },

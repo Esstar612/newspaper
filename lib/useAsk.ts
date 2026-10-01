@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GENERAL } from "@/lib/categories";
+import type { Article } from "@/components/ArticleCard";
 
 export type Answer = {
     segments: Array<{ text: string; cites: number[] }>;
     sources: Array<{ n: number; url: string; title: string }>;
+    related: Article[];
     truncated: boolean;
 };
 
@@ -21,7 +23,9 @@ const isAnswer = (body: unknown): body is Answer => {
         Array.isArray(b?.segments) &&
         Array.isArray(b?.sources) &&
         b.segments.every((s) => typeof s?.text === "string" && Array.isArray(s.cites)) &&
-        b.sources.every((s) => typeof s?.n === "number" && typeof s.url === "string" && typeof s.title === "string")
+        b.sources.every((s) => typeof s?.n === "number" && typeof s.url === "string" && typeof s.title === "string") &&
+        (b.related === undefined ||
+            (Array.isArray(b.related) && b.related.every((a) => typeof a?.url === "string" && typeof a.title === "string")))
     );
 };
 
@@ -37,12 +41,14 @@ export function useAsk() {
         setState({ status: "idle" });
     }, []);
 
-    const ask = useCallback(async (question: string, category: string) => {
+    const ask = useCallback(async (question: string, category: string): Promise<AskState | null> => {
         current.current?.abort();
         const controller = new AbortController();
         current.current = controller;
         const settle = (next: AskState) => {
-            if (current.current === controller) setState(next);
+            if (current.current !== controller) return null;
+            setState(next);
+            return next;
         };
         const failed = (title: string, message: string, retry: boolean) =>
             settle({ status: "error", question, title, message, retry });
@@ -57,13 +63,13 @@ export function useAsk() {
             });
             const body = await res.json();
             if (res.ok && isAnswer(body)) {
-                return settle({ status: "done", question, answer: body });
+                return settle({ status: "done", question, answer: { ...body, related: body.related ?? [] } });
             }
             if (res.status === 429) return failed("Too many questions", `You can ask again after ${clock(body.resetAt)}.`, false);
             if (res.status === 503) return failed("Ask isn't available yet", body.error, false);
-            failed("Could not get an answer", body?.error ?? `HTTP ${res.status}`, true);
+            return failed("Could not get an answer", body?.error ?? `HTTP ${res.status}`, true);
         } catch {
-            failed("Could not get an answer", "Check your connection.", true);
+            return failed("Could not get an answer", "Check your connection.", true);
         }
     }, []);
 

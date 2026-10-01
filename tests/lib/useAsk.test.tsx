@@ -7,7 +7,7 @@ import { delay, http, HttpResponse } from "msw";
 import { server } from "../msw";
 import { useAsk, type AskState } from "@/lib/useAsk";
 
-const answer = (text: string) => ({ segments: [{ text, cites: [] }], sources: [], refused: false, truncated: false });
+const answer = (text: string, related: object[] = []) => ({ segments: [{ text, cites: [] }], sources: [], related, refused: false, truncated: false });
 
 function serve(body: Record<string, unknown>, status = 200) {
     const sent: unknown[] = [];
@@ -90,12 +90,45 @@ describe("useAsk", () => {
         ["no answer at all", { error: "proxy says hi" }],
         ["a segment without citations", { segments: [{ text: "ok" }], sources: [] }],
         ["a source that is not a source", { segments: [{ text: "ok", cites: [] }], sources: [null] }],
-    ])("treats a 200 with %s as an error", async (_, body) => {
+        ["a related story without a link", { segments: [{ text: "ok", cites: [] }], sources: [], related: [{ title: "No link" }] }],
+    ])("treats a 200 with %s as an error, and resolves to that error", async (_, body) => {
         serve(body);
+        const { result } = track();
+        let resolved: AskState | null = null;
+        await act(async () => {
+            resolved = await result.current.ask("What did the bank do?", "business");
+        });
+        expect(result.current.state).toMatchObject({ status: "error", title: "Could not get an answer" });
+        expect(resolved).toEqual(result.current.state);
+    });
+
+    it("resolves to the error state after a server failure", async () => {
+        serve({ error: "The answer service is unavailable." }, 502);
+        const { result } = track();
+        let resolved: AskState | null = null;
+        await act(async () => {
+            resolved = await result.current.ask("What did the bank do?", "business");
+        });
+        expect(resolved).toMatchObject({ status: "error", retry: true });
+    });
+
+    it("reads a reply without related stories as having none", async () => {
+        serve({ segments: [{ text: "Rates held.", cites: [] }], sources: [], refused: false, truncated: false });
+        const { result } = track();
+        let resolved: AskState | null = null;
+        await act(async () => {
+            resolved = await result.current.ask("What did the bank do?", "business");
+        });
+        expect(resolved).toMatchObject({ status: "done", answer: { related: [] } });
+    });
+
+    it("passes related stories through", async () => {
+        const related = [{ _id: "r1", title: "Related", url: "https://example.com/r1", source: "BBC News" }];
+        serve(answer("Rates held.", related));
         const { result } = track();
         act(() => void result.current.ask("What did the bank do?", "business"));
         await settled(result);
-        expect(result.current.state).toMatchObject({ status: "error", title: "Could not get an answer" });
+        expect(result.current.state).toMatchObject({ status: "done", answer: { related } });
     });
 
     it("asks the reader to check their connection when the request cannot be sent", async () => {
@@ -119,8 +152,12 @@ describe("useAsk", () => {
             })
         );
         const { result, states } = track();
-        act(() => void result.current.ask("First question?", "business"));
+        let first: Promise<AskState | null> = Promise.resolve(null);
+        act(() => {
+            first = result.current.ask("First question?", "business");
+        });
         act(() => void result.current.ask("Second question?", "business"));
+        expect(await first).toBeNull();
         await waitFor(() => expect(finished).toContain("First question?"));
         await new Promise((resolve) => setTimeout(resolve, 20));
         expect(sent).toEqual(["First question?", "Second question?"]);

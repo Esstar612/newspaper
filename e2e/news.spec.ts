@@ -25,7 +25,7 @@ test("ArrowRight moves to the next section", async ({ page }) => {
 
 test("Enter filters the grid to matches inside the section", async ({ page }) => {
     await page.route("**/api/ask", (route) =>
-        route.fulfill({ json: { segments: [{ text: "Rates held.", cites: [] }], sources: [], refused: false, truncated: false } })
+        route.fulfill({ json: { segments: [{ text: "Rates held.", cites: [] }], sources: [], related: [], refused: false, truncated: false } })
     );
     await page.goto("/news?category=business");
     await expect(page.getByText(/^20 articles · Newest story /)).toBeVisible();

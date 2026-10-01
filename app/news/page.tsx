@@ -7,7 +7,7 @@ import { ArticleCard, type Article } from "@/components/ArticleCard";
 import { AskBox } from "@/components/AskBox";
 import { AskPanel } from "@/components/AskPanel";
 import { relativeTime, utf8Bytes } from "@/lib/format";
-import { useAsk } from "@/lib/useAsk";
+import { useAsk, type AskState } from "@/lib/useAsk";
 import { Button, EmptyState, ErrorBanner, Icon, Skeleton, cn } from "@/components/ui";
 
 type NewsResponse = {
@@ -78,6 +78,7 @@ function NewsPageInner() {
     const [error, setError] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState("");
     const { state: askState, ask, reset: resetAsk } = useAsk();
+    const [showRelated, setShowRelated] = useState(false);
     const [userCountry, setUserCountry] = useState("us");
     const tabsRef = useRef<HTMLDivElement>(null);
     const latestLoad = useRef(0);
@@ -203,6 +204,7 @@ function NewsPageInner() {
     useEffect(() => {
         fetchArticles(activeCategory, "");
         setSearchQuery("");
+        setShowRelated(false);
         resetAsk();
     }, [activeCategory, fetchArticles, resetAsk]);
 
@@ -228,22 +230,43 @@ function NewsPageInner() {
         });
     };
 
-    const handleBoxSubmit = (query: string) => {
-        setSearchQuery(query);
-        const asking = askable(query);
-        fetchArticles(activeCategory, query, { fallback: asking });
-        if (asking) ask(query, activeCategory);
-        else resetAsk();
-    };
-
     const clearFilter = () => {
         setSearchQuery("");
         fetchArticles(activeCategory, "");
     };
 
+    const afterAsk = (result: AskState | null, query: string) => {
+        if (!result) return;
+        if (result.status === "done" && result.answer.related.length > 0) {
+            setShowRelated(true);
+            return;
+        }
+        setSearchQuery(query);
+        fetchArticles(activeCategory, query, { fallback: true });
+    };
+
+    const runAsk = async (query: string) => afterAsk(await ask(query, activeCategory), query);
+
+    const handleBoxSubmit = (query: string) => {
+        setShowRelated(false);
+        if (askable(query)) {
+            if (searchQuery) clearFilter();
+            runAsk(query);
+            return;
+        }
+        resetAsk();
+        setSearchQuery(query);
+        fetchArticles(activeCategory, query);
+    };
+
+    const showAll = () => {
+        setShowRelated(false);
+        if (searchQuery) clearFilter();
+    };
+
     const closeAnswer = () => {
         resetAsk();
-        if (searchQuery) clearFilter();
+        showAll();
     };
 
     // Hierarchy: one lead, then a standard grid, then a compact tail. A page of 20
@@ -253,6 +276,8 @@ function NewsPageInner() {
     const featured = searching ? articles : rest.slice(0, 9);
     const compact = searching ? [] : rest.slice(9);
     const sectionLabel = LABELS[activeCategory] ?? activeCategory;
+    const related = showRelated && askState.status === "done" ? askState.answer.related : [];
+    const relatedMode = related.length > 0;
     const newest = articles.reduce<string | undefined>(
         (latest, a) => (a.publishedAt && (!latest || a.publishedAt > latest) ? a.publishedAt : latest),
         undefined
@@ -307,7 +332,7 @@ function NewsPageInner() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
-                        {!searching && !loading && articles.length > 0 && (
+                        {!searching && !relatedMode && !loading && articles.length > 0 && (
                             <span className="whitespace-nowrap text-sm text-ink-muted">
                                 {articles.length} {articles.length === 1 ? "article" : "articles"}
                                 {newest && ` · Newest story ${relativeTime(newest)}`}
@@ -333,96 +358,108 @@ function NewsPageInner() {
                     <AskPanel
                         state={askState}
                         category={activeCategory}
-                        onRetry={() => ask(askState.question, activeCategory)}
+                        onRetry={() => runAsk(askState.question)}
                         onClose={closeAnswer}
                     />
                 )}
 
-                {searching && !loading && (
+                {(relatedMode || (searching && !loading)) && (
                     <div className="mb-5 flex items-center justify-between gap-4">
                         <p className="text-sm font-semibold text-ink-muted">
-                            Stories matching your question · {articles.length}
+                            {relatedMode
+                                ? `Stories related to your question · ${related.length}`
+                                : `Stories matching your question · ${articles.length}`}
                         </p>
-                        <Button variant="ghost" size="sm" onClick={clearFilter}>
+                        <Button variant="ghost" size="sm" onClick={showAll}>
                             Show all {sectionLabel}
                         </Button>
                     </div>
                 )}
 
                 <div id={PANEL_ID} role="tabpanel" aria-label={sectionLabel}>
-                    {loading && !loadingMore && <ArticleSkeletons />}
+                    {relatedMode ? (
+                        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                            {related.map((article) => (
+                                <ArticleCard key={article._id ?? article.url} article={article} variant="feature" />
+                            ))}
+                        </div>
+                    ) : (
+                        <>
+                            {loading && !loadingMore && <ArticleSkeletons />}
 
-                    {error && !loading && (
-                        <ErrorBanner
-                            title="Could not load articles"
-                            message={error}
-                            onRetry={() => fetchArticles(activeCategory, searchQuery, { fallback: askable(searchQuery) })}
-                        />
-                    )}
+                            {error && !loading && (
+                                <ErrorBanner
+                                    title="Could not load articles"
+                                    message={error}
+                                    onRetry={() => fetchArticles(activeCategory, searchQuery, { fallback: askable(searchQuery) })}
+                                />
+                            )}
 
-                    {!loading && !error && articles.length === 0 && (
-                        <EmptyState
-                            icon={<Icon name="news" size={40} />}
-                            title={
-                                searching
-                                    ? `No results for “${searchQuery}”`
-                                    : `Nothing in ${sectionLabel} right now`
-                            }
-                            hint={
-                                searching
-                                    ? `Try different words, or show all of ${sectionLabel}.`
-                                    : "This section refreshes daily — try another category."
-                            }
-                        />
-                    )}
+                            {!loading && !error && articles.length === 0 && (
+                                <EmptyState
+                                    icon={<Icon name="news" size={40} />}
+                                    title={
+                                        searching
+                                            ? `No results for “${searchQuery}”`
+                                            : `Nothing in ${sectionLabel} right now`
+                                    }
+                                    hint={
+                                        searching
+                                            ? `Try different words, or show all of ${sectionLabel}.`
+                                            : "This section refreshes daily. Try another category."
+                                    }
+                                />
+                            )}
 
-                    {!loading && articles.length > 0 && (
-                        <div className="space-y-8">
-                            {!searching && lead && <ArticleCard article={lead} variant="lead" />}
+                            {!loading && articles.length > 0 && (
+                                <div className="space-y-8">
+                                    {!searching && lead && <ArticleCard article={lead} variant="lead" />}
 
-                            {featured.length > 0 && (
-                                <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                                    {featured.map((article) => (
-                                        <ArticleCard
-                                            key={article._id ?? article.url}
-                                            article={article}
-                                            variant="feature"
-                                        />
-                                    ))}
+                                    {featured.length > 0 && (
+                                        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                                            {featured.map((article) => (
+                                                <ArticleCard
+                                                    key={article._id ?? article.url}
+                                                    article={article}
+                                                    variant="feature"
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {compact.length > 0 && (
+                                        <section aria-label="In brief">
+                                            <h2 className="mb-1 border-b-2 border-line-strong pb-2 font-serif text-2xl font-semibold text-ink">
+                                                In brief
+                                            </h2>
+                                            {/* Columns keep a long tail readable; a single
+                                                column of 20+ headlines just looked unfinished. */}
+                                            <div className="grid gap-x-8 sm:grid-cols-2 lg:grid-cols-3">
+                                                {compact.map((article) => (
+                                                    <ArticleCard
+                                                        key={article._id ?? article.url}
+                                                        article={article}
+                                                        variant="compact"
+                                                    />
+                                                ))}
+                                            </div>
+                                        </section>
+                                    )}
                                 </div>
                             )}
 
-                            {compact.length > 0 && (
-                                <section aria-label="In brief">
-                                    <h2 className="mb-1 border-b-2 border-line-strong pb-2 font-serif text-2xl font-semibold text-ink">
-                                        In brief
-                                    </h2>
-                                    {/* Columns keep a long tail readable; a single
-                                        column of 20+ headlines just looked unfinished. */}
-                                    <div className="grid gap-x-8 sm:grid-cols-2 lg:grid-cols-3">
-                                        {compact.map((article) => (
-                                            <ArticleCard
-                                                key={article._id ?? article.url}
-                                                article={article}
-                                                variant="compact"
-                                            />
-                                        ))}
-                                    </div>
-                                </section>
+                            {!loading && articles.length > 0 && nextCursor && (
+                                <div className="mt-10 text-center">
+                                    <Button
+                                        onClick={() => fetchArticles(activeCategory, searchQuery, { cursor: nextCursor, more: true })}
+                                        disabled={loadingMore}
+                                        variant="secondary"
+                                    >
+                                        {loadingMore ? "Loading…" : "Load more"}
+                                    </Button>
+                                </div>
                             )}
-                        </div>
-                    )}
-
-                    {!loading && articles.length > 0 && nextCursor && (
-                        <div className="mt-10 text-center">
-                            <Button
-                                onClick={() => fetchArticles(activeCategory, searchQuery, { cursor: nextCursor, more: true })}
-                                disabled={loadingMore}
-                                variant="secondary"
-                            >
-                                {loadingMore ? "Loading…" : "Load more"}
-                            </Button>
-                        </div>
+                        </>
                     )}
                 </div>
             </div>

@@ -18,6 +18,7 @@ const answer = {
         { n: 1, url: "https://example.com/rates", title: "Bank holds rates" },
         { n: 2, url: "https://example.com/analysts", title: "Analysts surprised" },
     ],
+    related: [],
     truncated: false,
 };
 

@@ -191,7 +191,7 @@ export function AskBox({ category, onSubmit, debounceMs = 250 }: Props) {
                         <span>↑ ↓ to move</span>
                         <span>Enter to ask</span>
                         <span>Esc to close</span>
-                        <span className="ml-auto text-ink-muted">Enter also shows every match</span>
+                        <span className="ml-auto text-ink-muted">Enter also shows related stories</span>
                     </div>
                 </div>
             )}

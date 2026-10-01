@@ -8,7 +8,7 @@ import { makeMessage, textBlock } from "../fixtures/messages";
 
 const db = vi.hoisted(() => ({
     connectDB: vi.fn(),
-    articles: [] as Array<{ _id: string; title: string; description: string; url: string }>,
+    articles: [] as Array<Record<string, unknown> & { _id: string }>,
     usage: new Map<string, number>(),
     expiries: new Map<string, Date>(),
     updates: [] as Array<{ filter: unknown; update: unknown; options: unknown }>,
@@ -18,8 +18,13 @@ vi.mock("@/lib/db", () => ({ connectDB: db.connectDB }));
 vi.mock("@/models/Article", () => ({
     Article: {
         find: (query: { _id: { $in: string[] } }) => ({
-            select: () => ({
-                lean: () => Promise.resolve(db.articles.filter((a) => query._id.$in.includes(a._id))),
+            select: (projection: Record<string, number>) => ({
+                lean: () =>
+                    Promise.resolve(
+                        db.articles
+                            .filter((a) => query._id.$in.includes(a._id))
+                            .map((a) => Object.fromEntries(Object.entries(a).filter(([k]) => k === "_id" || projection[k])))
+                    ),
             }),
         }),
     },
@@ -53,7 +58,17 @@ const article = (id: string, title: string) => ({
     title,
     description: `${title}, in detail.`,
     url: `https://example.com/${id}`,
+    imageUrl: `https://example.com/${id}.jpg`,
+    source: "BBC News",
+    publishedAt: "2026-10-01T09:00:00.000Z",
+    tags: ["business"],
+    providerId: "not-for-clients",
 });
+
+const card = (id: string, title: string) => {
+    const { _id, description, url, imageUrl, source, publishedAt, tags } = article(id, title);
+    return { _id, title, description, url, imageUrl, source, publishedAt, tags };
+};
 
 async function ask(body: unknown, ip = "203.0.113.9") {
     const res = await POST(
@@ -165,6 +180,12 @@ describe("/api/ask", () => {
         expect(outcomes()).toEqual(["outcome:answered"]);
     });
 
+    it("returns every retrieved article as related, in search rank order", async () => {
+        hits = ["a2", "a1"];
+        const res = await ask({ q: "What did the bank do?" });
+        expect((await res.json()).related).toEqual([card("a2", "Jobs report"), card("a1", "Bank holds rates")]);
+    });
+
     it("uses the configured model", async () => {
         vi.stubEnv("ASK_MODEL", "claude-sonnet-5");
         await ask({ q: "What did the bank do?" });
@@ -243,15 +264,16 @@ describe("/api/ask", () => {
     it("answers without Claude when nothing matches", async () => {
         hits = [];
         const res = await ask({ q: "What happened on Mars?" });
-        expect(await res.json()).toMatchObject({ noMatch: true, sources: [] });
+        expect(await res.json()).toMatchObject({ noMatch: true, sources: [], related: [] });
         expect(claude).toEqual([]);
         expect(outcomes()).toEqual(["outcome:no_match"]);
     });
 
     it("drops a hit whose article is gone and deletes its vector", async () => {
         hits = ["gone", "a1"];
-        await ask({ q: "What did the bank do?" });
+        const res = await ask({ q: "What did the bank do?" });
         expect(deleted).toEqual([["gone"]]);
+        expect((await res.json()).related).toEqual([card("a1", "Bank holds rates")]);
         const sent = (claude[0].messages as Array<{ content: Array<{ source?: string }> }>)[0].content;
         expect(sent.filter((b) => b.source).map((b) => b.source)).toEqual(["https://example.com/a1"]);
     });
@@ -279,10 +301,14 @@ describe("/api/ask", () => {
         expect(outcomes()).toEqual(["outcome:truncated"]);
     });
 
-    it("reports an answer with no surviving citation as refused", async () => {
+    it("reports an answer with no surviving citation as refused, and still returns its related stories", async () => {
         claudeReply = () => reply([textBlock("The results do not say.")]);
         const res = await ask({ q: "What did the bank do?" });
-        expect(await res.json()).toMatchObject({ refused: true, truncated: false });
+        expect(await res.json()).toMatchObject({
+            refused: true,
+            truncated: false,
+            related: [card("a1", "Bank holds rates"), card("a2", "Jobs report")],
+        });
         expect(outcomes()).toEqual(["outcome:refused"]);
     });
 });

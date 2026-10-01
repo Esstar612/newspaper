@@ -50,7 +50,7 @@ describe("AskBox", () => {
         expect(box).toHaveAttribute("aria-activedescendant", options[0].id);
         const list = screen.getByRole("listbox");
         expect(box).toHaveAttribute("aria-controls", list.id);
-        expect(screen.getByText("Enter also shows every match")).toBeInTheDocument();
+        expect(screen.getByText("Enter also shows related stories")).toBeInTheDocument();
         expect(screen.getByText("Esc to close")).toBeInTheDocument();
     });
 

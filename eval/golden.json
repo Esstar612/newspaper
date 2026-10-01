@@ -1,0 +1,502 @@
+[
+  {
+    "id": "flydubai-landing",
+    "question": "Where did the FlyDubai flight to Tel Aviv land after the fight in the cockpit?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbef86",
+        "url": "https://www.nytimes.com/2026/09/30/world/middleeast/flydubai-dubai-israel-flight-diverted.html"
+      },
+      {
+        "id": "6abdaaff1c991e9cd7dbef8e",
+        "url": "https://www.nytimes.com/live/2026/09/30/world/dubai-flight-tel-aviv-israel-pilots/israel-and-saudi-arabia-dont-have-formal-ties-but-israelis-have-occasionally-landed-there"
+      }
+    ]
+  },
+  {
+    "id": "flydubai-suspect",
+    "question": "Who was arrested after the stabbing on the FlyDubai flight?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbef6f",
+        "url": "https://www.bbc.co.uk/news/articles/cqjdv7pmj9dno"
+      },
+      {
+        "id": "6abdaaff1c991e9cd7dbef61",
+        "url": "https://www.nytimes.com/live/2026/09/30/world/dubai-flight-tel-aviv-israel-pilots"
+      }
+    ]
+  },
+  {
+    "id": "iraq-withdrawal",
+    "question": "Did the Iraqi government want coalition troops to leave?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbef78",
+        "url": "https://www.bbc.co.uk/news/articles/c65ym1dyn92mo"
+      }
+    ]
+  },
+  {
+    "id": "morocco-pm",
+    "question": "Who has Morocco named as prime minister?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da347c",
+        "url": "https://www.nytimes.com/2026/09/29/world/middleeast/morocco-first-woman-prime-minister.html"
+      },
+      {
+        "id": "6abc597f1c991e9cd7da3487",
+        "url": "https://www.bbc.co.uk/news/articles/c674kkjllw17o"
+      }
+    ]
+  },
+  {
+    "id": "botswana-elephants",
+    "question": "How many elephants did Botswana kill for its independence celebrations?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbef80",
+        "url": "https://www.bbc.co.uk/news/articles/cxm2qmpy57ggo"
+      }
+    ]
+  },
+  {
+    "id": "fat-bear",
+    "question": "Which bear won Fat Bear Week, and which bear did it beat in the final?",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbef81",
+        "url": "https://www.bbc.co.uk/news/articles/ck8d3vl9mj13o"
+      },
+      {
+        "id": "6abdaaff1c991e9cd7dbef9d",
+        "url": "https://www.bbc.co.uk/news/videos/cqkg07lp9dvlo"
+      }
+    ]
+  },
+  {
+    "id": "france-protests",
+    "question": "Why are high school students protesting in France?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbefa6",
+        "url": "https://www.nytimes.com/2026/09/30/world/europe/france-student-protest-arrests.html"
+      },
+      {
+        "id": "6abc597f1c991e9cd7da3486",
+        "url": "https://www.bbc.co.uk/news/articles/c862epne7glyo"
+      }
+    ]
+  },
+  {
+    "id": "eiffel-resignation",
+    "question": "Why is the head of the Eiffel Tower operating company stepping down?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbefda",
+        "url": "https://www.nytimes.com/2026/09/30/world/europe/eiffel-tower-director-resigns.html"
+      },
+      {
+        "id": "6abc597f1c991e9cd7da348a",
+        "url": "https://www.bbc.co.uk/news/articles/crn8e069v7p7o"
+      }
+    ]
+  },
+  {
+    "id": "greggs-jobs",
+    "question": "How many jobs is Greggs cutting, and how many factories will close?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbef90",
+        "url": "https://www.bbc.co.uk/news/articles/cm7802ylq973o"
+      },
+      {
+        "id": "6abdaaff1c991e9cd7dbef97",
+        "url": "https://www.bbc.co.uk/news/videos/cj4gkn1xg6ddo"
+      }
+    ]
+  },
+  {
+    "id": "mattel-ceo",
+    "question": "Who is taking over as chief executive of Mattel?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbefde",
+        "url": "https://www.nytimes.com/2026/09/30/business/media/conde-nast-roger-lynch-steps-down.html"
+      }
+    ]
+  },
+  {
+    "id": "mattel-kreiz",
+    "question": "What new job is Mattel chief Ynon Kreiz taking?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbefd6",
+        "url": "https://www.nytimes.com/2026/09/30/business/paramount-ellison-kreiz-mattel.html"
+      }
+    ]
+  },
+  {
+    "id": "triple-lock",
+    "question": "What does the state pension triple lock guarantee?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da34b0",
+        "url": "https://www.bbc.co.uk/news/articles/cq6m03ld7nvo"
+      }
+    ]
+  },
+  {
+    "id": "diesel-price",
+    "question": "What is the average price of diesel in the UK?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6ab7137f5e31fcde3ca86426",
+        "url": "https://www.bbc.co.uk/news/articles/c20zgjzz0e4o"
+      },
+      {
+        "id": "6abc597f1c991e9cd7da34b8",
+        "url": "https://www.bbc.co.uk/news/articles/c6n4k987k981o"
+      },
+      {
+        "id": "6ab7137f5e31fcde3ca86439",
+        "url": "https://www.bbc.co.uk/news/articles/cr86xn04gxj9o"
+      }
+    ]
+  },
+  {
+    "id": "oura-listing",
+    "question": "What happened to Oura’s plans to list on the stock market?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da34ae",
+        "url": "https://www.bbc.co.uk/news/articles/cjwyz5v190qwo"
+      }
+    ]
+  },
+  {
+    "id": "nvidia-buyback",
+    "question": "How much did Nvidia add to its stock buyback?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da3525",
+        "url": "https://www.nytimes.com/2026/09/28/business/nvidia-stock-buyback.html"
+      }
+    ]
+  },
+  {
+    "id": "china-us-tariffs",
+    "question": "What did China and the United States agree about tariffs?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da3528",
+        "url": "https://www.nytimes.com/2026/09/28/business/china-us-summit-tariffs.html"
+      }
+    ]
+  },
+  {
+    "id": "huel-ad",
+    "question": "Why was a Huel advert banned?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da34a9",
+        "url": "https://www.bbc.co.uk/news/articles/c920v3y1gjgpo"
+      }
+    ]
+  },
+  {
+    "id": "x2-coaster",
+    "question": "Why is the X2 roller coaster at Six Flags closing?",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da3517",
+        "url": "https://www.nytimes.com/2026/09/29/us/six-flags-magic-mountain-x2-roller-coaster-closed.html"
+      },
+      {
+        "id": "6abc597f1c991e9cd7da3483",
+        "url": "https://www.bbc.co.uk/news/articles/cw14d37446d8o"
+      }
+    ]
+  },
+  {
+    "id": "openai-astra",
+    "question": "Why did OpenAI decide not to release its newest model?",
+    "category": "technology",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da346b",
+        "url": "https://www.nytimes.com/2026/09/28/technology/openai-astra-safety.html"
+      },
+      {
+        "id": "6abc597f1c991e9cd7da34b3",
+        "url": "https://www.bbc.co.uk/news/articles/cm5y5nynl75ko"
+      }
+    ]
+  },
+  {
+    "id": "tiktok-alabama",
+    "question": "How much is TikTok paying Alabama, and what for?",
+    "category": "technology",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6ab9b67f5e31fcde3cabc96c",
+        "url": "https://www.nytimes.com/2026/09/25/technology/tiktok-alabama-child-safety-settlement.html"
+      }
+    ]
+  },
+  {
+    "id": "openai-apology",
+    "question": "Has OpenAI apologised for the Australian Medicare hack?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da34af",
+        "url": "https://www.nytimes.com/2026/09/29/world/asia/openai-australia-government-hack-apology.html"
+      }
+    ]
+  },
+  {
+    "id": "google-space-dc",
+    "question": "When is Google sending its AI data center satellite into orbit?",
+    "category": "technology",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6ab7137f5e31fcde3ca863e5",
+        "url": "https://www.nytimes.com/2026/09/24/technology/google-suncatcher-ai-data-center-space.html"
+      },
+      {
+        "id": "6ab7137f5e31fcde3ca863ec",
+        "url": "https://www.nytimes.com/2026/09/24/technology/data-centers-in-space-science.html"
+      }
+    ]
+  },
+  {
+    "id": "starship-orbit",
+    "question": "Did Starship reach orbit on its latest test flight, and how did the flight end?",
+    "category": "science",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da3475",
+        "url": "https://www.nytimes.com/2026/09/28/science/space/spacex-starship-first-orbital-flight.html"
+      },
+      {
+        "id": "6abc597f1c991e9cd7da34cb",
+        "url": "https://www.bbc.co.uk/news/videos/c6j9xkdvrd94o"
+      },
+      {
+        "id": "6abc597f1c991e9cd7da34a1",
+        "url": "https://www.bbc.co.uk/news/videos/c6ge4lp442npo"
+      }
+    ]
+  },
+  {
+    "id": "tva-reactor",
+    "question": "What has the Tennessee Valley Authority been approved to build?",
+    "category": "science",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da3476",
+        "url": "https://www.nytimes.com/2026/09/29/climate/nuclear-reactor-tennessee-valley-authority.html"
+      }
+    ]
+  },
+  {
+    "id": "klamath-salmon",
+    "question": "How are salmon doing since the Klamath dams were removed?",
+    "category": "science",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6ab7137f5e31fcde3ca863f5",
+        "url": "https://www.nytimes.com/2026/09/24/climate/klamath-salmon-recovery-dam-removal.html"
+      }
+    ]
+  },
+  {
+    "id": "elephant-medicine",
+    "question": "Do elephants use plants to treat themselves when they are sick?",
+    "category": "science",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6ab7137f5e31fcde3ca86450",
+        "url": "https://www.bbc.co.uk/news/articles/cv1j4yr6j2p0o"
+      }
+    ]
+  },
+  {
+    "id": "pa-measles",
+    "question": "How many measles cases has Pennsylvania reported this year?",
+    "category": "health",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6ab9b67f5e31fcde3cabc977",
+        "url": "https://www.nytimes.com/2026/09/27/us/pennsylvania-measles-outbreak-cases.html"
+      }
+    ]
+  },
+  {
+    "id": "ppe-waste",
+    "question": "How much did the UK waste on PPE, according to the Covid inquiry?",
+    "category": "health",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6ab7137f5e31fcde3ca86479",
+        "url": "https://www.bbc.co.uk/news/articles/czrxrlydyzzo"
+      },
+      {
+        "id": "6ab7137f5e31fcde3ca86478",
+        "url": "https://www.bbc.co.uk/news/articles/c07y7zj43jmo"
+      }
+    ]
+  },
+  {
+    "id": "ebola-vaccine",
+    "question": "Has the UK begun testing an Ebola vaccine?",
+    "category": "health",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6ab7137f5e31fcde3ca8647a",
+        "url": "https://www.bbc.co.uk/news/articles/cpwep8xnkrqo"
+      }
+    ]
+  },
+  {
+    "id": "man-city-sponsorship",
+    "question": "How much sponsorship income was Manchester City found to have inflated?",
+    "category": "sports",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbefb8",
+        "url": "https://www.bbc.co.uk/sport/football/articles/c9lyk46gekkeo"
+      },
+      {
+        "id": "6abc597f1c991e9cd7da34e7",
+        "url": "https://www.bbc.co.uk/sport/football/articles/c63reg93xwzro"
+      }
+    ]
+  },
+  {
+    "id": "gill-223",
+    "question": "How many runs did Shubman Gill score against the West Indies?",
+    "category": "sports",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbefba",
+        "url": "https://www.bbc.co.uk/sport/cricket/articles/cqwyz07g0e5yo"
+      }
+    ]
+  },
+  {
+    "id": "djokovic-china",
+    "question": "Who did Novak Djokovic beat at the China Open?",
+    "category": "sports",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbefbf",
+        "url": "https://www.bbc.co.uk/sport/tennis/articles/cq20vxxdxk54o"
+      }
+    ]
+  },
+  {
+    "id": "nobel-peace",
+    "question": "Who won this year’s Nobel Peace Prize?",
+    "answerable": false,
+    "gold": []
+  },
+  {
+    "id": "boj-rates",
+    "question": "What did the Bank of Japan decide about interest rates?",
+    "category": "business",
+    "answerable": false,
+    "gold": []
+  },
+  {
+    "id": "ryder-cup",
+    "question": "Which team won the Ryder Cup?",
+    "category": "sports",
+    "answerable": false,
+    "gold": []
+  },
+  {
+    "id": "iphone",
+    "question": "What new features does the latest iPhone have?",
+    "category": "technology",
+    "answerable": false,
+    "gold": []
+  },
+  {
+    "id": "canada-election",
+    "question": "Who won the Canadian federal election?",
+    "category": "world",
+    "answerable": false,
+    "gold": []
+  },
+  {
+    "id": "tokyo-marathon",
+    "question": "Who won the Tokyo Marathon?",
+    "category": "sports",
+    "answerable": false,
+    "gold": []
+  },
+  {
+    "id": "sudan-cholera",
+    "question": "How many cholera cases have been reported in Sudan?",
+    "category": "health",
+    "answerable": false,
+    "gold": []
+  },
+  {
+    "id": "palme-dor",
+    "question": "Which film won the Palme d’Or at Cannes?",
+    "answerable": false,
+    "gold": []
+  }
+]

@@ -53,13 +53,9 @@ export async function GET(req: NextRequest) {
                     });
                 }
             } catch (e) {
-                // Per-symbol errors are reported rather than swallowed, so a symbol
-                // that stops working is visible instead of silently empty.
-                results.push({
-                    symbol,
-                    points: 0,
-                    error: e instanceof Error ? e.message : "Fetch failed",
-                });
+                const error = e instanceof Error ? e.message : "Fetch failed";
+                console.error(`Candles for ${symbol} failed: ${error}`);
+                results.push({ symbol, points: 0, error });
             }
 
             await sleep(250);

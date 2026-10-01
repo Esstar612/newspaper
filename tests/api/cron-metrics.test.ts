@@ -162,6 +162,9 @@ describe("refresh-candles", () => {
             expect(res.status).toBe(200);
             expect(runTags()).toEqual([["env:production", "job:refresh-candles", "status:success"]]);
             expect(gauge("newspaper.candles.symbols_ok")).toBe(9);
+            expect(errors).toHaveBeenCalledTimes(1);
+            expect(String(errors.mock.calls[0][0])).toContain("AAPL");
+            expect(String(errors.mock.calls[0][0])).toContain("403");
         },
         10_000
     );

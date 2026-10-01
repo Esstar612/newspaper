@@ -155,10 +155,10 @@ describe("/api/ask", () => {
             usage: { input_tokens: 1200, output_tokens: 80 },
         });
         expect(claude[0]).toMatchObject({
-            model: "claude-sonnet-5",
+            model: "claude-sonnet-5-5",
             max_tokens: 1024,
             output_config: { effort: "low" },
-            thinking: { type: "disabled" },
+            thinking: { type: "between_tools" },
         });
         expect((claude[0].messages as Array<{ content: unknown[] }>)[0].content).toHaveLength(3);
         expect((searches[0].query as { filter: unknown }).filter).toEqual({ tags: { $in: ["business"] } });
@@ -166,9 +166,10 @@ describe("/api/ask", () => {
     });
 
     it("uses the configured model", async () => {
-        vi.stubEnv("ASK_MODEL", "claude-sonnet-5-5");
+        vi.stubEnv("ASK_MODEL", "claude-sonnet-5");
         await ask({ q: "What did the bank do?" });
-        expect(claude[0].model).toBe("claude-sonnet-5-5");
+        expect(claude[0].model).toBe("claude-sonnet-5");
+        expect(claude[0].thinking).toEqual({ type: "disabled" });
     });
 
     it("returns 503 without keys, before the limiter or any paid call", async () => {

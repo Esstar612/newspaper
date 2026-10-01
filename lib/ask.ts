@@ -112,7 +112,7 @@ export function createAskHandler({
                     maxRetries: 0,
                     timeout: ROUTE_BUDGET_MS - RESERVED_MS,
                 });
-                message = await requestAnswer(client, process.env.ASK_MODEL || "claude-sonnet-5", input.q, articles);
+                message = await requestAnswer(client, process.env.ASK_MODEL || "claude-sonnet-5-5", input.q, articles);
             } catch (e) {
                 console.error(`Claude request failed: ${e instanceof Error ? e.message : String(e)}`);
                 report("error");

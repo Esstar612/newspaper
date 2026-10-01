@@ -44,7 +44,7 @@ export function requestAnswer(client: Anthropic, model: string, question: string
         model,
         max_tokens: 1024,
         output_config: { effort: "low" },
-        thinking: { type: "disabled" },
+        thinking: model === "claude-sonnet-5-5" ? { type: "between_tools" } : { type: "disabled" },
         system: SYSTEM_PROMPT,
         messages: buildMessages(question, articles),
     });

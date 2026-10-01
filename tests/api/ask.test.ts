@@ -8,7 +8,7 @@ import { makeMessage, textBlock } from "../fixtures/messages";
 
 const db = vi.hoisted(() => ({
     connectDB: vi.fn(),
-    articles: [] as Array<{ _id: string; title: string; description: string; url: string }>,
+    articles: [] as Array<Record<string, unknown> & { _id: string }>,
     usage: new Map<string, number>(),
     expiries: new Map<string, Date>(),
     updates: [] as Array<{ filter: unknown; update: unknown; options: unknown }>,
@@ -18,8 +18,13 @@ vi.mock("@/lib/db", () => ({ connectDB: db.connectDB }));
 vi.mock("@/models/Article", () => ({
     Article: {
         find: (query: { _id: { $in: string[] } }) => ({
-            select: () => ({
-                lean: () => Promise.resolve(db.articles.filter((a) => query._id.$in.includes(a._id))),
+            select: (projection: Record<string, number>) => ({
+                lean: () =>
+                    Promise.resolve(
+                        db.articles
+                            .filter((a) => query._id.$in.includes(a._id))
+                            .map((a) => Object.fromEntries(Object.entries(a).filter(([k]) => k === "_id" || projection[k])))
+                    ),
             }),
         }),
     },
@@ -53,7 +58,17 @@ const article = (id: string, title: string) => ({
     title,
     description: `${title}, in detail.`,
     url: `https://example.com/${id}`,
+    imageUrl: `https://example.com/${id}.jpg`,
+    source: "BBC News",
+    publishedAt: "2026-10-01T09:00:00.000Z",
+    tags: ["business"],
+    providerId: "not-for-clients",
 });
+
+const card = (id: string, title: string) => {
+    const { _id, description, url, imageUrl, source, publishedAt, tags } = article(id, title);
+    return { _id, title, description, url, imageUrl, source, publishedAt, tags };
+};
 
 async function ask(body: unknown, ip = "203.0.113.9") {
     const res = await POST(
@@ -69,6 +84,7 @@ async function ask(body: unknown, ip = "203.0.113.9") {
 }
 
 let hits: string[] = [];
+let scores: Record<string, number> = {};
 let searches: Array<Record<string, unknown>> = [];
 let deleted: string[][] = [];
 let claude: Array<Record<string, unknown>> = [];
@@ -96,6 +112,7 @@ beforeEach(() => {
     db.expiries = new Map();
     db.updates = [];
     hits = ["a1", "a2"];
+    scores = {};
     searches = [];
     deleted = [];
     claude = [];
@@ -118,7 +135,7 @@ beforeEach(() => {
         http.post(`${PINECONE}/records/namespaces/production/search`, async ({ request }) => {
             searches.push((await request.json()) as Record<string, unknown>);
             return HttpResponse.json({
-                result: { hits: hits.map((id, i) => ({ _id: id, _score: 0.9 - i / 10, fields: {} })) },
+                result: { hits: hits.map((id, i) => ({ _id: id, _score: scores[id] ?? 0.9 - i / 10, fields: {} })) },
                 usage: { read_units: 1, embed_total_tokens: 7 },
             });
         }),
@@ -149,7 +166,16 @@ describe("/api/ask", () => {
         expect(res.status).toBe(200);
         expect(await res.json()).toMatchObject({
             segments: [{ text: "The bank held rates.", cites: [1] }],
-            sources: [{ n: 1, url: "https://example.com/a1", title: "Bank holds rates" }],
+            sources: [
+                {
+                    n: 1,
+                    url: "https://example.com/a1",
+                    title: "Bank holds rates",
+                    source: "BBC News",
+                    publishedAt: "2026-10-01T09:00:00.000Z",
+                    imageUrl: "https://example.com/a1.jpg",
+                },
+            ],
             refused: false,
             truncated: false,
             usage: { input_tokens: 1200, output_tokens: 80 },
@@ -163,6 +189,38 @@ describe("/api/ask", () => {
         expect((claude[0].messages as Array<{ content: unknown[] }>)[0].content).toHaveLength(3);
         expect((searches[0].query as { filter: unknown }).filter).toEqual({ tags: { $in: ["business"] } });
         expect(outcomes()).toEqual(["outcome:answered"]);
+    });
+
+    it("returns every retrieved article as related, in search rank order", async () => {
+        hits = ["a2", "a1"];
+        const res = await ask({ q: "What did the bank do?" });
+        expect((await res.json()).related).toEqual([card("a2", "Jobs report"), card("a1", "Bank holds rates")]);
+    });
+
+    it("shows only related stories that clear the score cutoff, still in rank order, while Claude reads them all", async () => {
+        db.articles.push(article("a3", "Rates outlook"));
+        hits = ["a1", "a2", "a3"];
+        scores = { a1: 0.6, a2: 0.2, a3: 0.5 };
+        const res = await ask({ q: "What did the bank do?" });
+        expect((await res.json()).related).toEqual([card("a1", "Bank holds rates"), card("a3", "Rates outlook")]);
+        const sent = (claude[0].messages as Array<{ content: Array<{ type: string }> }>)[0].content;
+        expect(sent.filter((b) => b.type === "search_result")).toHaveLength(3);
+    });
+
+    it("keeps a story at exactly the cutoff and drops one just under it", async () => {
+        scores = { a1: 0.35, a2: 0.349 };
+        const res = await ask({ q: "What did the bank do?" });
+        expect((await res.json()).related.map((a: { _id: string }) => a._id)).toEqual(["a1"]);
+    });
+
+    it("still answers when no story clears the cutoff, with no related stories", async () => {
+        scores = { a1: 0.3, a2: 0.2 };
+        const res = await ask({ q: "What did the bank do?" });
+        const body = await res.json();
+        expect(body.related).toEqual([]);
+        expect(body.noMatch).toBeUndefined();
+        expect(body.sources).toHaveLength(1);
+        expect(claude).toHaveLength(1);
     });
 
     it("uses the configured model", async () => {
@@ -243,15 +301,16 @@ describe("/api/ask", () => {
     it("answers without Claude when nothing matches", async () => {
         hits = [];
         const res = await ask({ q: "What happened on Mars?" });
-        expect(await res.json()).toMatchObject({ noMatch: true, sources: [] });
+        expect(await res.json()).toMatchObject({ noMatch: true, sources: [], related: [] });
         expect(claude).toEqual([]);
         expect(outcomes()).toEqual(["outcome:no_match"]);
     });
 
     it("drops a hit whose article is gone and deletes its vector", async () => {
         hits = ["gone", "a1"];
-        await ask({ q: "What did the bank do?" });
+        const res = await ask({ q: "What did the bank do?" });
         expect(deleted).toEqual([["gone"]]);
+        expect((await res.json()).related).toEqual([card("a1", "Bank holds rates")]);
         const sent = (claude[0].messages as Array<{ content: Array<{ source?: string }> }>)[0].content;
         expect(sent.filter((b) => b.source).map((b) => b.source)).toEqual(["https://example.com/a1"]);
     });
@@ -279,10 +338,14 @@ describe("/api/ask", () => {
         expect(outcomes()).toEqual(["outcome:truncated"]);
     });
 
-    it("reports an answer with no surviving citation as refused", async () => {
+    it("reports an answer with no surviving citation as refused, and still returns its related stories", async () => {
         claudeReply = () => reply([textBlock("The results do not say.")]);
         const res = await ask({ q: "What did the bank do?" });
-        expect(await res.json()).toMatchObject({ refused: true, truncated: false });
+        expect(await res.json()).toMatchObject({
+            refused: true,
+            truncated: false,
+            related: [card("a1", "Bank holds rates"), card("a2", "Jobs report")],
+        });
         expect(outcomes()).toEqual(["outcome:refused"]);
     });
 });

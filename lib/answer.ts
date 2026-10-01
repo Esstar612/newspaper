@@ -1,11 +1,13 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Message, MessageParam } from "@anthropic-ai/sdk/resources/messages";
 
-export type AnswerArticle = { id: string; url: string; title: string; description: string };
+type Card = { source?: string; publishedAt?: string | Date; imageUrl?: string };
+
+export type AnswerArticle = { id: string; url: string; title: string; description: string } & Card;
 
 export type Answer = {
     segments: Array<{ text: string; cites: number[] }>;
-    sources: Array<{ n: number; url: string; title: string }>;
+    sources: Array<{ n: number; url: string; title: string } & Card>;
     refused: boolean;
     truncated: boolean;
     droppedCitations: number;
@@ -73,7 +75,14 @@ export function readAnswer(message: Message, articles: AnswerArticle[]): Answer 
             if (n === undefined) {
                 n = sources.length + 1;
                 numbers.set(citation.search_result_index, n);
-                sources.push({ n, url: article.url, title: article.title });
+                sources.push({
+                    n,
+                    url: article.url,
+                    title: article.title,
+                    source: article.source,
+                    publishedAt: article.publishedAt,
+                    imageUrl: article.imageUrl,
+                });
             }
             if (!cites.includes(n)) cites.push(n);
         }

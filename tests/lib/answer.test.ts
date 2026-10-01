@@ -67,6 +67,14 @@ describe("readAnswer", () => {
         expect(answer).toMatchObject({ refused: false, truncated: false, droppedCitations: 0 });
     });
 
+    it("carries each source's outlet, date and image, and keeps them out of the prompt", () => {
+        const card = { source: "BBC News", publishedAt: "2026-10-01T09:00:00.000Z", imageUrl: "https://example.com/jobs.jpg" };
+        const withCards = [articles[0], { ...articles[1], ...card }];
+        const answer = readAnswer(message([{ text: "Hiring slowed.", citations: [cite(1)] }]), withCards);
+        expect(answer.sources).toEqual([{ n: 1, url: "https://example.com/jobs", title: "Jobs report", ...card }]);
+        expect(JSON.stringify(buildMessages("What happened?", withCards))).not.toMatch(/BBC News|jobs\.jpg|2026-10-01/);
+    });
+
     it("drops citations that point outside the results or quote other text", () => {
         const answer = readAnswer(
             message([{ text: "Claim", citations: [cite(5, "Out of range"), cite(0, "Something else entirely")] }]),

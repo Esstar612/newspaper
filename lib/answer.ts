@@ -1,3 +1,4 @@
+import type Anthropic from "@anthropic-ai/sdk";
 import type { Message, MessageParam } from "@anthropic-ai/sdk/resources/messages";
 
 export type AnswerArticle = { id: string; url: string; title: string; description: string };
@@ -36,6 +37,17 @@ export function buildMessages(question: string, articles: AnswerArticle[]): Mess
             ],
         },
     ];
+}
+
+export function requestAnswer(client: Anthropic, model: string, question: string, articles: AnswerArticle[]) {
+    return client.messages.create({
+        model,
+        max_tokens: 1024,
+        output_config: { effort: "low" },
+        thinking: { type: "disabled" },
+        system: SYSTEM_PROMPT,
+        messages: buildMessages(question, articles),
+    });
 }
 
 export function readAnswer(message: Message, articles: AnswerArticle[]): Answer {

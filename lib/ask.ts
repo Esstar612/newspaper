@@ -3,7 +3,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
 import { AskUsage } from "@/models/AskUsage";
-import { SYSTEM_PROMPT, buildMessages, readAnswer, type AnswerArticle } from "@/lib/answer";
+import { readAnswer, requestAnswer, type AnswerArticle } from "@/lib/answer";
 import { isCategory } from "@/lib/categories";
 import { askSeries, sendMetrics, type AskOutcome } from "@/lib/metrics";
 import { incrementUpdate, takeSlot } from "@/lib/rate-limit";
@@ -107,18 +107,12 @@ export function createAskHandler({
 
             let message;
             try {
-                message = await new Anthropic({
+                const client = new Anthropic({
                     apiKey: process.env.ANTHROPIC_API_KEY,
                     maxRetries: 0,
                     timeout: ROUTE_BUDGET_MS - RESERVED_MS,
-                }).messages.create({
-                    model: process.env.ASK_MODEL || "claude-sonnet-5",
-                    max_tokens: 1024,
-                    output_config: { effort: "low" },
-                    thinking: { type: "disabled" },
-                    system: SYSTEM_PROMPT,
-                    messages: buildMessages(input.q, articles),
                 });
+                message = await requestAnswer(client, process.env.ASK_MODEL || "claude-sonnet-5", input.q, articles);
             } catch (e) {
                 console.error(`Claude request failed: ${e instanceof Error ? e.message : String(e)}`);
                 report("error");

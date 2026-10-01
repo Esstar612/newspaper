@@ -30,6 +30,7 @@ export default defineConfig({
             WEATHER_API_KEY: "",
             PINECONE_API_KEY: "",
             PINECONE_INDEX_HOST: "",
+            ANTHROPIC_API_KEY: "",
         },
     },
 });

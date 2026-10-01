@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const QUERY_SHAPE =
-    /^(avg|sum|min|max)\(last_\d+h\):(avg|sum|min|max):[a-z][a-z0-9_.]*\{[a-z0-9_:,.-]+\}( by \{[a-z_]+(,[a-z_]+)*\})?(\.as_count\(\))? (<|>|<=|>=) -?\d+$/;
+    /^(avg|sum|min|max)\(last_\d+h\):(avg|sum|min|max):[a-z][a-z0-9_.]*\{[a-z0-9_:,.!-]+\}( by \{[a-z_]+(,[a-z_]+)*\})?(\.as_count\(\))? (<|>|<=|>=) -?\d+$/;
 
 export function loadMonitors(file, notify = "") {
     const monitors = JSON.parse(readFileSync(file, "utf8"));

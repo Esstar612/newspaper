@@ -53,6 +53,10 @@ export const test = base.extend<{ offOrigin: string[] }>({
                     return route.abort();
                 }
             );
+            await page.route("**/api/ask", (route) => {
+                blocked.push(route.request().url());
+                return route.abort();
+            });
             await page.route("**/api/stocks/watchlist", (route) => route.fulfill({ json: { quotes: QUOTES, stale: false } }));
             await page.route("**/api/currencies", (route) => route.fulfill({ json: { codes: ["USD", "EUR", "GBP"] } }));
             await page.route(/\/api\/weather\?/, (route) => route.fulfill({ json: WEATHER }));

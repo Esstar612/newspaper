@@ -116,6 +116,50 @@ describe("News page", () => {
         expect(search.get("category")).toBe("business");
     });
 
+    it("opens the Ask panel scoped to the active section", async () => {
+        const user = userEvent.setup();
+        params = new URLSearchParams("category=business");
+        serveNews({ first: { articles: makeArticles(2), nextCursor: null } });
+        const asked: unknown[] = [];
+        server.use(
+            http.post("*/api/ask", async ({ request }) => {
+                asked.push(await request.json());
+                return HttpResponse.json({ segments: [{ text: "Rates held.", cites: [] }], sources: [], refused: true, truncated: false });
+            })
+        );
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        expect(screen.queryByRole("textbox", { name: "Ask about recent news" })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Ask a question" }));
+        await user.type(screen.getByRole("textbox", { name: "Ask about recent news" }), "What did the bank do?");
+        await user.click(screen.getByRole("button", { name: "Ask" }));
+        expect(await screen.findByText("Rates held.")).toBeInTheDocument();
+        expect(asked).toEqual([{ q: "What did the bank do?", category: "business" }]);
+    });
+
+    it("clears the Ask answer when the section changes", async () => {
+        const user = userEvent.setup();
+        params = new URLSearchParams("category=business");
+        serveNews({ first: { articles: makeArticles(2), nextCursor: null } });
+        server.use(
+            http.post("*/api/ask", () =>
+                HttpResponse.json({ segments: [{ text: "Rates held.", cites: [] }], sources: [], refused: true, truncated: false })
+            )
+        );
+        const { rerender } = render(<NewsPage />);
+        await screen.findByText("Story 01");
+        await user.click(screen.getByRole("button", { name: "Ask a question" }));
+        await user.type(screen.getByRole("textbox", { name: "Ask about recent news" }), "What did the bank do?");
+        await user.click(screen.getByRole("button", { name: "Ask" }));
+        await screen.findByText("Rates held.");
+
+        params = new URLSearchParams("category=sports");
+        rerender(<NewsPage />);
+        await waitFor(() => expect(screen.queryByText("Rates held.")).not.toBeInTheDocument());
+        expect(screen.getByRole("textbox", { name: "Ask about recent news" })).toHaveValue("");
+    });
+
     it("shows the reason when the feed fails", async () => {
         server.use(http.get("*/api/news", () => HttpResponse.json({ articles: [], error: "db down" }, { status: 500 })));
         render(<NewsPage />);

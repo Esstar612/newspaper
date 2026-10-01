@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent, typ
 import { useRouter, useSearchParams } from "next/navigation";
 import { CATEGORIES, GENERAL, LABELS, isCategory } from "@/lib/categories";
 import { ArticleCard, type Article } from "@/components/ArticleCard";
+import { AskPanel } from "@/components/AskPanel";
 import {
     Button,
     EmptyState,
@@ -76,6 +77,7 @@ function NewsPageInner() {
     const [searchQuery, setSearchQuery] = useState("");
     const [tempSearchQuery, setTempSearchQuery] = useState("");
     const [searchExpanded, setSearchExpanded] = useState(false);
+    const [askOpen, setAskOpen] = useState(false);
     const [userCountry, setUserCountry] = useState("us");
     const tabsRef = useRef<HTMLDivElement>(null);
     const limit = 20;
@@ -328,6 +330,17 @@ function NewsPageInner() {
                             </Button>
                         )}
 
+                        <Button
+                            variant={askOpen ? "primary" : "secondary"}
+                            size="sm"
+                            onClick={() => setAskOpen(!askOpen)}
+                            aria-label="Ask a question"
+                            aria-expanded={askOpen}
+                            className="px-2.5"
+                        >
+                            Ask
+                        </Button>
+
                         {isDev && (
                             <Button
                                 variant="secondary"
@@ -342,6 +355,8 @@ function NewsPageInner() {
                         )}
                     </div>
                 </div>
+
+                {askOpen && <AskPanel key={activeCategory} category={activeCategory} />}
 
                 {/* Result summary */}
                 {!loading && (articles.length > 0 || searching) && (

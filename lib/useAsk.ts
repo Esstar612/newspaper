@@ -6,7 +6,7 @@ import type { Article } from "@/components/ArticleCard";
 
 export type Answer = {
     segments: Array<{ text: string; cites: number[] }>;
-    sources: Array<{ n: number; url: string; title: string }>;
+    sources: Array<{ n: number; url: string; title: string; source?: string; publishedAt?: string; imageUrl?: string }>;
     related: Article[];
     truncated: boolean;
 };

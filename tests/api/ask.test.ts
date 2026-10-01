@@ -164,7 +164,16 @@ describe("/api/ask", () => {
         expect(res.status).toBe(200);
         expect(await res.json()).toMatchObject({
             segments: [{ text: "The bank held rates.", cites: [1] }],
-            sources: [{ n: 1, url: "https://example.com/a1", title: "Bank holds rates" }],
+            sources: [
+                {
+                    n: 1,
+                    url: "https://example.com/a1",
+                    title: "Bank holds rates",
+                    source: "BBC News",
+                    publishedAt: "2026-10-01T09:00:00.000Z",
+                    imageUrl: "https://example.com/a1.jpg",
+                },
+            ],
             refused: false,
             truncated: false,
             usage: { input_tokens: 1200, output_tokens: 80 },

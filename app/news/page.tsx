@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CATEGORIES, GENERAL, LABELS, isCategory } from "@/lib/categories";
 import { ArticleCard, type Article } from "@/components/ArticleCard";
 import { AskBox } from "@/components/AskBox";
-import { AskPanel } from "@/components/AskPanel";
+import { AnswerCard } from "@/components/AnswerCard";
 import { relativeTime, utf8Bytes } from "@/lib/format";
 import { useAsk, type AskState } from "@/lib/useAsk";
 import { Button, EmptyState, ErrorBanner, Icon, Skeleton, cn } from "@/components/ui";
@@ -355,7 +355,7 @@ function NewsPageInner() {
                 </div>
 
                 {askState.status !== "idle" && (
-                    <AskPanel
+                    <AnswerCard
                         state={askState}
                         category={activeCategory}
                         onRetry={() => runAsk(askState.question)}

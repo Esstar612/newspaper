@@ -96,7 +96,15 @@ export function createAskHandler({
                 const d = byId.get(id);
                 if (!d) continue;
                 const description = d.description ?? "";
-                articles.push({ id, url: d.url, title: d.title, description });
+                articles.push({
+                    id,
+                    url: d.url,
+                    title: d.title,
+                    description,
+                    source: d.source,
+                    publishedAt: d.publishedAt,
+                    imageUrl: d.imageUrl ?? "",
+                });
                 related.push({
                     _id: id,
                     title: d.title,

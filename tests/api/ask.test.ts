@@ -84,6 +84,7 @@ async function ask(body: unknown, ip = "203.0.113.9") {
 }
 
 let hits: string[] = [];
+let scores: Record<string, number> = {};
 let searches: Array<Record<string, unknown>> = [];
 let deleted: string[][] = [];
 let claude: Array<Record<string, unknown>> = [];
@@ -111,6 +112,7 @@ beforeEach(() => {
     db.expiries = new Map();
     db.updates = [];
     hits = ["a1", "a2"];
+    scores = {};
     searches = [];
     deleted = [];
     claude = [];
@@ -133,7 +135,7 @@ beforeEach(() => {
         http.post(`${PINECONE}/records/namespaces/production/search`, async ({ request }) => {
             searches.push((await request.json()) as Record<string, unknown>);
             return HttpResponse.json({
-                result: { hits: hits.map((id, i) => ({ _id: id, _score: 0.9 - i / 10, fields: {} })) },
+                result: { hits: hits.map((id, i) => ({ _id: id, _score: scores[id] ?? 0.9 - i / 10, fields: {} })) },
                 usage: { read_units: 1, embed_total_tokens: 7 },
             });
         }),
@@ -193,6 +195,32 @@ describe("/api/ask", () => {
         hits = ["a2", "a1"];
         const res = await ask({ q: "What did the bank do?" });
         expect((await res.json()).related).toEqual([card("a2", "Jobs report"), card("a1", "Bank holds rates")]);
+    });
+
+    it("shows only related stories that clear the score cutoff, still in rank order, while Claude reads them all", async () => {
+        db.articles.push(article("a3", "Rates outlook"));
+        hits = ["a1", "a2", "a3"];
+        scores = { a1: 0.6, a2: 0.2, a3: 0.5 };
+        const res = await ask({ q: "What did the bank do?" });
+        expect((await res.json()).related).toEqual([card("a1", "Bank holds rates"), card("a3", "Rates outlook")]);
+        const sent = (claude[0].messages as Array<{ content: Array<{ type: string }> }>)[0].content;
+        expect(sent.filter((b) => b.type === "search_result")).toHaveLength(3);
+    });
+
+    it("keeps a story at exactly the cutoff and drops one just under it", async () => {
+        scores = { a1: 0.35, a2: 0.349 };
+        const res = await ask({ q: "What did the bank do?" });
+        expect((await res.json()).related.map((a: { _id: string }) => a._id)).toEqual(["a1"]);
+    });
+
+    it("still answers when no story clears the cutoff, with no related stories", async () => {
+        scores = { a1: 0.3, a2: 0.2 };
+        const res = await ask({ q: "What did the bank do?" });
+        const body = await res.json();
+        expect(body.related).toEqual([]);
+        expect(body.noMatch).toBeUndefined();
+        expect(body.sources).toHaveLength(1);
+        expect(claude).toHaveLength(1);
     });
 
     it("uses the configured model", async () => {

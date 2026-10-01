@@ -12,6 +12,7 @@ import { deleteVectors, searchVectors } from "@/lib/vectors";
 const NO_MATCH = "No recent articles match that question.";
 const ROUTE_BUDGET_MS = 30_000;
 const RESERVED_MS = 5_000;
+const RELATED_MIN_SCORE = 0.35;
 
 const configured = () =>
     Boolean(process.env.PINECONE_API_KEY && process.env.PINECONE_INDEX_HOST && process.env.ANTHROPIC_API_KEY);
@@ -92,7 +93,7 @@ export function createAskHandler({
 
             const articles: AnswerArticle[] = [];
             const related = [];
-            for (const id of ids) {
+            for (const { id, score } of hits) {
                 const d = byId.get(id);
                 if (!d) continue;
                 const description = d.description ?? "";
@@ -105,6 +106,7 @@ export function createAskHandler({
                     publishedAt: d.publishedAt,
                     imageUrl: d.imageUrl ?? "",
                 });
+                if (score < RELATED_MIN_SCORE) continue;
                 related.push({
                     _id: id,
                     title: d.title,

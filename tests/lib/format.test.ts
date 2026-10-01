@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { money, percent, relativeTime, truncate } from "@/lib/format";
+import { cutToBytes, money, percent, relativeTime, truncate, utf8Bytes } from "@/lib/format";
+
+describe("cutToBytes", () => {
+    it("leaves text within the limit alone", () => {
+        expect(cutToBytes("Rates held.", 4000)).toBe("Rates held.");
+    });
+
+    it("cuts multi-byte text on a character boundary, never over the limit", () => {
+        const cut = cutToBytes("日本".repeat(1000), 4000);
+        expect(utf8Bytes(cut)).toBeLessThanOrEqual(4000);
+        expect(utf8Bytes(cut)).toBeGreaterThan(3996);
+        expect(cut).not.toContain("\uFFFD");
+        expect(cut).toBe("日本".repeat(1000).slice(0, cut.length));
+    });
+
+    it("keeps an emoji whole rather than splitting its surrogate pair", () => {
+        expect(cutToBytes("ab😀", 5)).toBe("ab");
+        expect(cutToBytes("ab😀", 6)).toBe("ab😀");
+    });
+});
 
 describe("truncate", () => {
     it("keeps text within the limit", () => {

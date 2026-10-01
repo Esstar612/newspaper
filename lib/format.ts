@@ -58,6 +58,17 @@ export const PLACEHOLDER_IMAGE =
 
 export const utf8Bytes = (text: string) => new TextEncoder().encode(text).length;
 
+export function cutToBytes(text: string, max: number): string {
+    let out = "";
+    let size = 0;
+    for (const char of text) {
+        size += utf8Bytes(char);
+        if (size > max) break;
+        out += char;
+    }
+    return out;
+}
+
 export function money(value: number, currency: string): string {
     try {
         return new Intl.NumberFormat(undefined, {

@@ -3,7 +3,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
 import { AskUsage } from "@/models/AskUsage";
-import { readAnswer, requestAnswer, type AnswerArticle } from "@/lib/answer";
+import { readAnswer, requestAnswer, retrievalQuery, type AnswerArticle, type Turn } from "@/lib/answer";
 import { isCategory } from "@/lib/categories";
 import { askSeries, sendMetrics, type AskOutcome } from "@/lib/metrics";
 import { incrementUpdate, takeSlot } from "@/lib/rate-limit";
@@ -27,15 +27,41 @@ const increment = async (key: string, expiresAt: Date) => {
     return doc?.n ?? 0;
 };
 
-function parse(body: unknown): { q: string; category?: string } | null {
+const MAX_HISTORY = 2;
+const MAX_ANSWER_BYTES = 4_000;
+
+function question(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    const text = value.trim();
+    const bytes = Buffer.byteLength(text);
+    return bytes >= 3 && bytes <= 300 ? text : null;
+}
+
+function parseHistory(value: unknown): Turn[] | null {
+    if (value === undefined) return [];
+    if (!Array.isArray(value) || value.length > MAX_HISTORY) return null;
+    const turns: Turn[] = [];
+    for (const turn of value) {
+        if (!turn || typeof turn !== "object") return null;
+        const { q, answer } = turn as Record<string, unknown>;
+        const asked = question(q);
+        if (!asked || typeof answer !== "string") return null;
+        const bytes = Buffer.byteLength(answer);
+        if (bytes < 1 || bytes > MAX_ANSWER_BYTES) return null;
+        turns.push({ q: asked, answer });
+    }
+    return turns;
+}
+
+function parse(body: unknown): { q: string; category?: string; history: Turn[] } | null {
     if (!body || typeof body !== "object") return null;
-    const { q, category } = body as Record<string, unknown>;
-    if (typeof q !== "string") return null;
-    const question = q.trim();
-    const bytes = Buffer.byteLength(question);
-    if (bytes < 3 || bytes > 300) return null;
+    const { q, category, history } = body as Record<string, unknown>;
+    const asked = question(q);
+    if (!asked) return null;
     if (category !== undefined && (typeof category !== "string" || !isCategory(category))) return null;
-    return { q: question, category };
+    const turns = parseHistory(history);
+    if (!turns) return null;
+    return { q: asked, category, history: turns };
 }
 
 export function createAskHandler({
@@ -55,7 +81,7 @@ export function createAskHandler({
         const input = parse(await req.json().catch(() => null));
         if (!input) {
             return NextResponse.json(
-                { error: "Ask a question of 3 to 300 bytes (300 plain-text characters), optionally with a valid section." },
+                { error: "Ask a question of 3 to 300 bytes (300 plain-text characters), optionally with a valid section and up to 2 earlier turns." },
                 { status: 400 }
             );
         }
@@ -74,7 +100,10 @@ export function createAskHandler({
             }
             limited = true;
 
-            const hits = await searchVectors(input.q, { category: input.category, maxRetries });
+            const hits = await searchVectors(retrievalQuery(input.q, input.history.at(-1)?.q), {
+                category: input.category,
+                maxRetries,
+            });
             const ids = hits.map((h) => h.id);
             const found = ids.length
                 ? await Article.find({ _id: { $in: ids } })
@@ -138,7 +167,13 @@ export function createAskHandler({
                     maxRetries: 0,
                     timeout: ROUTE_BUDGET_MS - RESERVED_MS,
                 });
-                message = await requestAnswer(client, process.env.ASK_MODEL || "claude-sonnet-5-5", input.q, articles);
+                message = await requestAnswer(
+                    client,
+                    process.env.ASK_MODEL || "claude-sonnet-5-5",
+                    input.q,
+                    articles,
+                    input.history
+                );
             } catch (e) {
                 console.error(`Claude request failed: ${e instanceof Error ? e.message : String(e)}`);
                 report("error");

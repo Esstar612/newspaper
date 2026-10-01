@@ -144,6 +144,172 @@ describe("News page", () => {
         expect(gridRequests().at(-1)!.searchParams.get("q")).toBe("rates");
     });
 
+    it("keeps the whole section under the answer when a question matches no headline", async () => {
+        const user = userEvent.setup();
+        params = new URLSearchParams("category=business");
+        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        serveAsk(answer("The bank held rates."));
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.type(box(), "What did the bank do?{Enter}");
+        expect(await screen.findByText("The bank held rates.")).toBeInTheDocument();
+        await waitFor(() => expect(gridRequests().at(-1)!.searchParams.has("q")).toBe(false));
+        expect(await screen.findByText("Story 01")).toBeInTheDocument();
+        expect(screen.queryByText(/Stories matching your question/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/No results/)).not.toBeInTheDocument();
+        expect(gridRequests().map((u) => u.searchParams.get("q"))).toEqual([null, "What did the bank do?", null]);
+    });
+
+    it("keeps the latest query's grid when an earlier one answers late", async () => {
+        const user = userEvent.setup();
+        let slowDone = false;
+        let pending = 0;
+        server.use(
+            http.get("*/api/news", async ({ request }) => {
+                const url = new URL(request.url);
+                requests.push(url);
+                const q = url.searchParams.get("q");
+                pending++;
+                try {
+                    if (q === "Slow question here") {
+                        await delay(200);
+                        slowDone = true;
+                        return HttpResponse.json({ articles: [], nextCursor: null });
+                    }
+                    if (q === "rates") return HttpResponse.json({ articles: makeArticles(1, () => ({ title: "Rates match" })), nextCursor: null });
+                    return HttpResponse.json({ articles: makeArticles(3), nextCursor: null });
+                } finally {
+                    pending--;
+                }
+            })
+        );
+        serveAsk(answer("An answer."));
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.type(box(), "Slow question here{Enter}");
+        await user.clear(box());
+        await user.type(box(), "rates{Enter}");
+        expect(await screen.findByText("Stories matching your question · 1")).toBeInTheDocument();
+        await waitFor(() => expect(slowDone).toBe(true));
+        await waitFor(() => expect(pending).toBe(0));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(screen.getByText("Stories matching your question · 1")).toBeInTheDocument();
+        expect(screen.getByText("Rates match")).toBeInTheDocument();
+    });
+
+    it("restores the section when a retried question still matches nothing", async () => {
+        const user = userEvent.setup();
+        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        let failed = false;
+        server.use(
+            http.get("*/api/news", ({ request }) => {
+                const url = new URL(request.url);
+                if (!url.searchParams.has("q") || failed) return;
+                failed = true;
+                requests.push(url);
+                return HttpResponse.json({ articles: [], error: "db down" }, { status: 500 });
+            })
+        );
+        serveAsk(answer("An answer."));
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.type(box(), "What did the bank do?{Enter}");
+        expect(await screen.findByText("Could not load articles")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Try again" }));
+        expect(await screen.findByText("Story 01")).toBeInTheDocument();
+        expect(screen.queryByText(/No results/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/Stories matching your question/)).not.toBeInTheDocument();
+    });
+
+    it("keeps the question so Try again re-runs it when the section fallback fails", async () => {
+        const user = userEvent.setup();
+        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        let filtered = 0;
+        let section = 0;
+        server.use(
+            http.get("*/api/news", ({ request }) => {
+                const url = new URL(request.url);
+                requests.push(url);
+                if (url.searchParams.get("limit") !== "20") return HttpResponse.json({ articles: [], nextCursor: null });
+                if (url.searchParams.get("q")) {
+                    filtered++;
+                    if (filtered === 1) return HttpResponse.json({ articles: [], nextCursor: null });
+                    return HttpResponse.json({ articles: makeArticles(1, () => ({ title: "Bank story" })), nextCursor: null });
+                }
+                section++;
+                if (section === 2) return HttpResponse.json({ articles: [], error: "db down" }, { status: 500 });
+                return HttpResponse.json({ articles: makeArticles(3), nextCursor: null });
+            })
+        );
+        serveAsk(answer("An answer."));
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.type(box(), "What did the bank do?{Enter}");
+        expect(await screen.findByText("db down")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Try again" }));
+        expect(await screen.findByText("Stories matching your question · 1")).toBeInTheDocument();
+        expect(gridRequests().at(-1)!.searchParams.get("q")).toBe("What did the bank do?");
+        expect([filtered, section]).toEqual([2, 2]);
+    });
+
+    it("shows the loading state for a search started during Load more", async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get("*/api/news", async ({ request }) => {
+                const url = new URL(request.url);
+                requests.push(url);
+                if (url.searchParams.get("cursor")) await delay(300);
+                if (url.searchParams.get("q")) {
+                    await delay(100);
+                    return HttpResponse.json({ articles: makeArticles(1, () => ({ title: "Match" })), nextCursor: null });
+                }
+                return HttpResponse.json({ articles: makeArticles(20), nextCursor: "c1" });
+            })
+        );
+        render(<NewsPage />);
+
+        await user.click(await screen.findByRole("button", { name: "Load more" }));
+        await user.type(box(), "AI{Enter}");
+        expect(screen.getByLabelText("Loading articles")).toBeInTheDocument();
+        expect(await screen.findByText("Match")).toBeInTheDocument();
+    });
+
+    it("hides Load more while a new search is loading", async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get("*/api/news", async ({ request }) => {
+                const url = new URL(request.url);
+                requests.push(url);
+                if (url.searchParams.get("q")) {
+                    await delay(200);
+                    return HttpResponse.json({ articles: makeArticles(1, () => ({ title: "Match" })), nextCursor: null });
+                }
+                return HttpResponse.json({ articles: makeArticles(20), nextCursor: "c1" });
+            })
+        );
+        render(<NewsPage />);
+
+        await screen.findByRole("button", { name: "Load more" });
+        await user.type(box(), "AI{Enter}");
+        expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+        expect(await screen.findByText("Match")).toBeInTheDocument();
+    });
+
+    it("still says there are no results for a search that does not ask", async () => {
+        const user = userEvent.setup();
+        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.type(box(), "AI{Enter}");
+        expect(await screen.findByText("No results for “AI”")).toBeInTheDocument();
+        expect(screen.getByText("Stories matching your question · 0")).toBeInTheDocument();
+    });
+
     it("filters without asking when the query is too short to ask", async () => {
         const user = userEvent.setup();
         serveNews({
@@ -210,7 +376,10 @@ describe("News page", () => {
     it("clears the filter and never shows a late answer after the section changes", async () => {
         const user = userEvent.setup();
         params = new URLSearchParams("category=business");
-        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        serveNews({
+            first: { articles: makeArticles(3), nextCursor: null },
+            "What did the bank do?:first": { articles: makeArticles(1, () => ({ title: "Bank story" })), nextCursor: null },
+        });
         let finished = false;
         server.use(
             http.post("*/api/ask", async () => {
@@ -223,7 +392,7 @@ describe("News page", () => {
         await screen.findByText("Story 01");
         await user.type(box(), "What did the bank do?{Enter}");
         await screen.findByText("Finding an answer…");
-        expect(await screen.findByText("Stories matching your question · 0")).toBeInTheDocument();
+        expect(await screen.findByText("Stories matching your question · 1")).toBeInTheDocument();
 
         params = new URLSearchParams("category=sports");
         rerender(<NewsPage />);

@@ -27,6 +27,13 @@ const COUNTRY_CODES: Record<string, string> = {
 
 const PANEL_ID = "news-results";
 
+const askable = (query: string) => {
+    const size = utf8Bytes(query);
+    return size >= 3 && size <= 300;
+};
+
+type LoadOptions = { cursor?: string | null; more?: boolean; fallback?: boolean };
+
 function ArticleSkeletons() {
     return (
         <div aria-busy="true" aria-label="Loading articles" className="space-y-8">
@@ -73,6 +80,7 @@ function NewsPageInner() {
     const { state: askState, ask, reset: resetAsk } = useAsk();
     const [userCountry, setUserCountry] = useState("us");
     const tabsRef = useRef<HTMLDivElement>(null);
+    const latestLoad = useRef(0);
     const limit = 20;
     const isDev = process.env.NODE_ENV === "development";
 
@@ -125,25 +133,29 @@ function NewsPageInner() {
 
             if (!res.ok) throw new Error("Ingest failed");
 
-            await fetchArticles(activeCategory, searchQuery);
+            await fetchArticles(activeCategory, searchQuery, { fallback: askable(searchQuery) });
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : "Ingest failed");
-        } finally {
             setLoading(false);
         }
     }
 
     const fetchArticles = useCallback(
-        async (category: string, search: string = "", cursor?: string | null, isLoadMore = false) => {
+        async (category: string, search: string = "", { cursor, more: isLoadMore = false, fallback = false }: LoadOptions = {}) => {
+            const run = isLoadMore ? latestLoad.current : ++latestLoad.current;
+            const current = () => run === latestLoad.current;
             if (isLoadMore) setLoadingMore(true);
-            else setLoading(true);
+            else {
+                setLoading(true);
+                setLoadingMore(false);
+            }
             setError("");
 
-            try {
+            const load = async (q: string) => {
                 const url = new URL("/api/news", window.location.origin);
                 url.searchParams.set("limit", String(limit));
                 if (category && category !== GENERAL) url.searchParams.set("category", category);
-                if (search) url.searchParams.set("q", search);
+                if (q) url.searchParams.set("q", q);
                 if (cursor) url.searchParams.set("cursor", cursor);
 
                 const res = await fetch(url.toString(), { cache: "no-store" });
@@ -152,6 +164,15 @@ function NewsPageInner() {
                 // The route answers 500 with an empty articles array, which the old
                 // code flattened into a generic "Failed to load" - surface the reason.
                 if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+                return data;
+            };
+
+            try {
+                let data = await load(search);
+                const empty = fallback && !isLoadMore && search && !data.articles?.length;
+                if (empty && current()) data = await load("");
+                if (!current()) return;
+                if (empty) setSearchQuery("");
 
                 if (isLoadMore) {
                     setArticles((prev) => {
@@ -165,11 +186,14 @@ function NewsPageInner() {
 
                 setNextCursor(data.nextCursor ?? null);
             } catch (e: unknown) {
+                if (!current()) return;
                 if (!isLoadMore) setArticles([]);
                 setError(e instanceof Error ? e.message : "Failed to load news");
             } finally {
-                setLoading(false);
-                setLoadingMore(false);
+                if (current()) {
+                    setLoading(false);
+                    setLoadingMore(false);
+                }
             }
         },
         [limit]
@@ -206,9 +230,9 @@ function NewsPageInner() {
 
     const handleBoxSubmit = (query: string) => {
         setSearchQuery(query);
-        fetchArticles(activeCategory, query);
-        const size = utf8Bytes(query);
-        if (size >= 3 && size <= 300) ask(query, activeCategory);
+        const asking = askable(query);
+        fetchArticles(activeCategory, query, { fallback: asking });
+        if (asking) ask(query, activeCategory);
         else resetAsk();
     };
 
@@ -332,7 +356,7 @@ function NewsPageInner() {
                         <ErrorBanner
                             title="Could not load articles"
                             message={error}
-                            onRetry={() => fetchArticles(activeCategory, searchQuery)}
+                            onRetry={() => fetchArticles(activeCategory, searchQuery, { fallback: askable(searchQuery) })}
                         />
                     )}
 
@@ -389,10 +413,10 @@ function NewsPageInner() {
                         </div>
                     )}
 
-                    {articles.length > 0 && nextCursor && (
+                    {!loading && articles.length > 0 && nextCursor && (
                         <div className="mt-10 text-center">
                             <Button
-                                onClick={() => fetchArticles(activeCategory, searchQuery, nextCursor, true)}
+                                onClick={() => fetchArticles(activeCategory, searchQuery, { cursor: nextCursor, more: true })}
                                 disabled={loadingMore}
                                 variant="secondary"
                             >

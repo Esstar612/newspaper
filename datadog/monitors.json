@@ -40,6 +40,14 @@
         "options": { "thresholds": { "critical": 0 }, "require_full_window": false }
     },
     {
+        "name": "[newspaper] /api/ask used more than its daily cap",
+        "type": "query alert",
+        "query": "sum(last_24h):sum:newspaper.ask{env:production,!outcome:limited,!outcome:unconfigured,!outcome:unavailable}.as_count() > 200",
+        "message": "More than 200 questions reached the paid path of /api/ask in 24 hours. The limiter caps each UTC day at 200, so this can fire on a healthy limiter when busy hours straddle midnight UTC. If it fires far above 400, the limiter is broken: check the AskUsage collection and the route logs.",
+        "tags": ["service:newspaper", "managed-by:script"],
+        "options": { "thresholds": { "critical": 200 }, "require_full_window": false }
+    },
+    {
         "name": "[newspaper] a news feed returned nothing",
         "type": "query alert",
         "query": "max(last_25h):max:newspaper.ingest.feed.items{env:production} by {source,category} < 1",

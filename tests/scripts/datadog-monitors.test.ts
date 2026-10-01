@@ -64,6 +64,15 @@ describe("monitor definitions", () => {
         }
     });
 
+    it("caps the paid path of /api/ask at 200 a day without excluding answers", () => {
+        const backstop = raw.find((m) => m.query.includes("newspaper.ask{"))!;
+        expect(backstop.query).toMatch(/^sum\(last_24h\):sum:newspaper\.ask\{.*\}\.as_count\(\) > 200$/);
+        for (const excluded of ["limited", "unconfigured", "unavailable"]) expect(backstop.query).toContain(`!outcome:${excluded}`);
+        for (const counted of ["answered", "refused", "truncated", "no_match", "error"]) {
+            expect(backstop.query).not.toContain(`outcome:${counted}`);
+        }
+    });
+
     it("only the ingest message mentions force=1", () => {
         expect(raw.filter((m) => m.message.includes("force=1")).map((m) => m.name)).toEqual([
             "[newspaper] ingest-news did not run",

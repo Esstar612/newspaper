@@ -4,6 +4,7 @@ import { server } from "../msw";
 import {
     candlesSeries,
     vectorsSeries,
+    askSeries,
     cleanupSeries,
     ingestSeries,
     runSeries,
@@ -110,6 +111,18 @@ describe("vectorsSeries", () => {
             ["newspaper.vectors.upserted", 3, 96],
             ["newspaper.vectors.pending", 3, 12],
         ]);
+    });
+});
+
+describe("askSeries", () => {
+    it("counts the outcome and records tokens when there are any", () => {
+        vi.stubEnv("VERCEL_ENV", "production");
+        expect(askSeries("answered", { input_tokens: 1200, output_tokens: 80 }, AT)).toEqual([
+            { metric: "newspaper.ask", type: 1, points: [{ timestamp: SECONDS, value: 1 }], tags: ["env:production", "outcome:answered"] },
+            { metric: "newspaper.ask.input_tokens", type: 3, points: [{ timestamp: SECONDS, value: 1200 }], tags: ["env:production"] },
+            { metric: "newspaper.ask.output_tokens", type: 3, points: [{ timestamp: SECONDS, value: 80 }], tags: ["env:production"] },
+        ]);
+        expect(askSeries("limited", undefined, AT).map((s) => s.metric)).toEqual(["newspaper.ask"]);
     });
 });
 

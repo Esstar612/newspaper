@@ -52,6 +52,30 @@ export const vectorsSeries = (result: { upserted: number; pending: number }, at:
     series("newspaper.vectors.pending", GAUGE, result.pending, at),
 ];
 
+export type AskOutcome =
+    | "answered"
+    | "refused"
+    | "truncated"
+    | "no_match"
+    | "limited"
+    | "unconfigured"
+    | "unavailable"
+    | "error";
+
+export const askSeries = (
+    outcome: AskOutcome,
+    usage: { input_tokens: number; output_tokens: number } | undefined,
+    at: Date
+): Series[] => [
+    series("newspaper.ask", COUNT, 1, at, [`outcome:${outcome}`]),
+    ...(usage
+        ? [
+              series("newspaper.ask.input_tokens", GAUGE, usage.input_tokens, at),
+              series("newspaper.ask.output_tokens", GAUGE, usage.output_tokens, at),
+          ]
+        : []),
+];
+
 export async function sendMetrics(payload: Series[], { timeoutMs = 3000 } = {}): Promise<void> {
     const key = process.env.DD_API_KEY;
     if (!key || payload.length === 0) return;

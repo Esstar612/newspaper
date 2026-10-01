@@ -14,22 +14,27 @@ const answer = {
     truncated: false,
 };
 
-test("asks a question about the open section and links the sources", async ({ page }) => {
+test("shows headline matches, then asks with Enter and links the sources", async ({ page }) => {
     const sent: unknown[] = [];
     await page.route("**/api/ask", async (route) => {
         sent.push(route.request().postDataJSON());
         await route.fulfill({ json: answer });
     });
     await page.goto("/news?category=business");
-    await page.getByRole("button", { name: "Ask a question" }).click();
-    await page.getByRole("textbox", { name: "Ask about recent news" }).fill("What happened in business?");
-    await page.getByRole("button", { name: "Ask", exact: true }).click();
+    const box = page.getByRole("combobox", { name: "Search headlines or ask a question" });
+    await box.fill("rates");
+    await expect(page.getByRole("option", { name: "Ask: “rates”" })).toBeVisible();
+    await expect(page.getByRole("option", { name: /Business story 01/ })).toBeVisible();
+    await box.press("Escape");
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+    await box.press("Enter");
 
     await expect(page.getByText("Business story 01 was the top story [1] and a central bank held rates [2].")).toBeVisible();
     const sources = page.getByRole("list", { name: "Sources" }).getByRole("link");
     await expect(sources).toHaveCount(2);
     await expect(sources.first()).toHaveAttribute("href", "https://example.com/story-01");
-    expect(sent).toEqual([{ q: "What happened in business?", category: "business" }]);
+    await expect(page.getByText("Stories matching your question · 1")).toBeVisible();
+    expect(sent).toEqual([{ q: "rates", category: "business" }]);
 });
 
 test("explains the limit when too many questions are asked", async ({ page }) => {
@@ -37,8 +42,8 @@ test("explains the limit when too many questions are asked", async ({ page }) =>
         route.fulfill({ status: 429, json: { error: "Too many questions.", scope: "ip", resetAt: "2026-10-01T15:00:00.000Z" } })
     );
     await page.goto("/news");
-    await page.getByRole("button", { name: "Ask a question" }).click();
-    await page.getByRole("textbox", { name: "Ask about recent news" }).fill("What happened today?");
-    await page.getByRole("button", { name: "Ask", exact: true }).click();
-    await expect(page.getByRole("region", { name: "Ask about recent news" }).getByRole("alert")).toContainText("Too many questions");
+    const box = page.getByRole("combobox", { name: "Search headlines or ask a question" });
+    await box.fill("What happened today?");
+    await box.press("Enter");
+    await expect(page.getByRole("region", { name: "Answer" }).getByRole("alert")).toContainText("Too many questions");
 });

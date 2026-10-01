@@ -1,19 +1,14 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CATEGORIES, GENERAL, LABELS, isCategory } from "@/lib/categories";
 import { ArticleCard, type Article } from "@/components/ArticleCard";
+import { AskBox } from "@/components/AskBox";
 import { AskPanel } from "@/components/AskPanel";
-import {
-    Button,
-    EmptyState,
-    ErrorBanner,
-    Icon,
-    PageHeader,
-    Skeleton,
-    cn,
-} from "@/components/ui";
+import { relativeTime, utf8Bytes } from "@/lib/format";
+import { useAsk } from "@/lib/useAsk";
+import { Button, EmptyState, ErrorBanner, Icon, Skeleton, cn } from "@/components/ui";
 
 type NewsResponse = {
     articles: Article[];
@@ -75,9 +70,7 @@ function NewsPageInner() {
     const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState("");
-    const [tempSearchQuery, setTempSearchQuery] = useState("");
-    const [searchExpanded, setSearchExpanded] = useState(false);
-    const [askOpen, setAskOpen] = useState(false);
+    const { state: askState, ask, reset: resetAsk } = useAsk();
     const [userCountry, setUserCountry] = useState("us");
     const tabsRef = useRef<HTMLDivElement>(null);
     const limit = 20;
@@ -186,9 +179,8 @@ function NewsPageInner() {
     useEffect(() => {
         fetchArticles(activeCategory, "");
         setSearchQuery("");
-        setTempSearchQuery("");
-        setSearchExpanded(false);
-    }, [activeCategory, fetchArticles]);
+        resetAsk();
+    }, [activeCategory, fetchArticles, resetAsk]);
 
     const selectCategory = useCallback(
         (category: string) => {
@@ -212,28 +204,22 @@ function NewsPageInner() {
         });
     };
 
-    const handleSearchSubmit = (e: FormEvent) => {
-        e.preventDefault();
-        const trimmed = tempSearchQuery.trim();
-        setSearchQuery(trimmed);
-        if (trimmed) {
-            fetchArticles(activeCategory, trimmed);
-            setSearchExpanded(false);
-        }
+    const handleBoxSubmit = (query: string) => {
+        setSearchQuery(query);
+        fetchArticles(activeCategory, query);
+        const size = utf8Bytes(query);
+        if (size >= 3 && size <= 300) ask(query, activeCategory);
+        else resetAsk();
     };
 
-    const handleClearSearch = () => {
-        setTempSearchQuery("");
+    const clearFilter = () => {
         setSearchQuery("");
-        setSearchExpanded(false);
         fetchArticles(activeCategory, "");
     };
 
-    const toggleSearch = () => {
-        setSearchExpanded(!searchExpanded);
-        if (searchExpanded) {
-            handleClearSearch();
-        }
+    const closeAnswer = () => {
+        resetAsk();
+        if (searchQuery) clearFilter();
     };
 
     // Hierarchy: one lead, then a standard grid, then a compact tail. A page of 20
@@ -242,16 +228,23 @@ function NewsPageInner() {
     const [lead, ...rest] = articles;
     const featured = searching ? articles : rest.slice(0, 9);
     const compact = searching ? [] : rest.slice(9);
+    const sectionLabel = LABELS[activeCategory] ?? activeCategory;
+    const newest = articles.reduce<string | undefined>(
+        (latest, a) => (a.publishedAt && (!latest || a.publishedAt > latest) ? a.publishedAt : latest),
+        undefined
+    );
 
     return (
         <div className="min-h-screen">
             <div className="mx-auto max-w-page px-4 py-8 sm:px-6">
-                <PageHeader
-                    title="Latest News"
-                    subtitle="Top stories from the New York Times and the BBC"
-                />
+                <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-10">
+                    <div>
+                        <h1 className="font-serif text-4xl font-semibold text-ink">Latest News</h1>
+                        <p className="mt-2 text-lg text-ink-muted">Top stories from the New York Times and the BBC</p>
+                    </div>
+                    <AskBox key={activeCategory} category={activeCategory} onSubmit={handleBoxSubmit} />
+                </div>
 
-                {/* Category strip + search */}
                 <div className="mb-6 flex flex-col gap-3 border-y border-line py-3 sm:flex-row sm:items-center sm:gap-4">
                     {/*
                      * A scrollable row, not a wrapping one. At 390px these tabs used to
@@ -290,56 +283,12 @@ function NewsPageInner() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
-                        {searchExpanded ? (
-                            <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
-                                <label htmlFor="news-search" className="sr-only">
-                                    Search articles
-                                </label>
-                                <input
-                                    id="news-search"
-                                    type="text"
-                                    value={tempSearchQuery}
-                                    onChange={(e) => setTempSearchQuery(e.target.value)}
-                                    placeholder="Search articles…"
-                                    autoFocus
-                                    className="h-9 w-full min-w-0 rounded border border-line bg-raised px-3 text-base text-ink placeholder:text-ink-subtle sm:w-56"
-                                />
-                                <Button type="submit" size="sm">
-                                    Go
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={toggleSearch}
-                                    aria-label="Close search"
-                                    className="px-2"
-                                >
-                                    <Icon name="close" size={16} />
-                                </Button>
-                            </form>
-                        ) : (
-                            <Button
-                                variant={searchQuery ? "primary" : "secondary"}
-                                size="sm"
-                                onClick={toggleSearch}
-                                aria-label={searchQuery ? `Searching: ${searchQuery}` : "Search articles"}
-                                className="px-2.5"
-                            >
-                                <Icon name="search" size={16} />
-                            </Button>
+                        {!searching && !loading && articles.length > 0 && (
+                            <span className="whitespace-nowrap text-sm text-ink-muted">
+                                {articles.length} {articles.length === 1 ? "article" : "articles"}
+                                {newest && ` · Newest story ${relativeTime(newest)}`}
+                            </span>
                         )}
-
-                        <Button
-                            variant={askOpen ? "primary" : "secondary"}
-                            size="sm"
-                            onClick={() => setAskOpen(!askOpen)}
-                            aria-label="Ask a question"
-                            aria-expanded={askOpen}
-                            className="px-2.5"
-                        >
-                            Ask
-                        </Button>
 
                         {isDev && (
                             <Button
@@ -356,36 +305,27 @@ function NewsPageInner() {
                     </div>
                 </div>
 
-                {askOpen && <AskPanel key={activeCategory} category={activeCategory} />}
-
-                {/* Result summary */}
-                {!loading && (articles.length > 0 || searching) && (
-                    <p className="mb-5 text-sm text-ink-muted">
-                        {searching ? (
-                            <>
-                                <span className="font-semibold text-ink">{articles.length}</span>{" "}
-                                {articles.length === 1 ? "result" : "results"} for{" "}
-                                <span className="text-ink">&ldquo;{searchQuery}&rdquo;</span> in{" "}
-                                {LABELS[activeCategory] ?? activeCategory}
-                                <button
-                                    onClick={handleClearSearch}
-                                    className="ml-3 rounded border border-line px-2 py-0.5 text-xs font-semibold text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
-                                >
-                                    Clear
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <span className="font-semibold text-ink">
-                                    {LABELS[activeCategory] ?? activeCategory}
-                                </span>{" "}
-                                · {articles.length} articles
-                            </>
-                        )}
-                    </p>
+                {askState.status !== "idle" && (
+                    <AskPanel
+                        state={askState}
+                        category={activeCategory}
+                        onRetry={() => ask(askState.question, activeCategory)}
+                        onClose={closeAnswer}
+                    />
                 )}
 
-                <div id={PANEL_ID} role="tabpanel" aria-label={LABELS[activeCategory] ?? activeCategory}>
+                {searching && !loading && (
+                    <div className="mb-5 flex items-center justify-between gap-4">
+                        <p className="text-sm font-semibold text-ink-muted">
+                            Stories matching your question · {articles.length}
+                        </p>
+                        <Button variant="ghost" size="sm" onClick={clearFilter}>
+                            Show all {sectionLabel}
+                        </Button>
+                    </div>
+                )}
+
+                <div id={PANEL_ID} role="tabpanel" aria-label={sectionLabel}>
                     {loading && !loadingMore && <ArticleSkeletons />}
 
                     {error && !loading && (
@@ -402,11 +342,11 @@ function NewsPageInner() {
                             title={
                                 searching
                                     ? `No results for “${searchQuery}”`
-                                    : `Nothing in ${LABELS[activeCategory] ?? activeCategory} right now`
+                                    : `Nothing in ${sectionLabel} right now`
                             }
                             hint={
                                 searching
-                                    ? "Try a different search term, or clear the search."
+                                    ? `Try different words, or show all of ${sectionLabel}.`
                                     : "This section refreshes daily — try another category."
                             }
                         />

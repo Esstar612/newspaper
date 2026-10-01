@@ -56,6 +56,8 @@ export const PLACEHOLDER_IMAGE =
         </svg>`.replace(/\s+/g, " ")
     );
 
+export const utf8Bytes = (text: string) => new TextEncoder().encode(text).length;
+
 export function money(value: number, currency: string): string {
     try {
         return new Intl.NumberFormat(undefined, {

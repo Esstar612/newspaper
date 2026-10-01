@@ -1,93 +1,44 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { GENERAL } from "@/lib/categories";
-import { Button, ErrorBanner, TextField } from "@/components/ui";
+import { LABELS } from "@/lib/categories";
+import type { AskState } from "@/lib/useAsk";
+import { ErrorBanner, Icon } from "@/components/ui";
 
-type Answer = {
-    segments: Array<{ text: string; cites: number[] }>;
-    sources: Array<{ n: number; url: string; title: string }>;
-    truncated: boolean;
+type Props = {
+    state: Exclude<AskState, { status: "idle" }>;
+    category: string;
+    onRetry: () => void;
+    onClose: () => void;
 };
 
-type State =
-    | { status: "idle" }
-    | { status: "loading" }
-    | { status: "done"; question: string; answer: Answer }
-    | { status: "error"; title: string; message: string; retry: string | null };
-
-const bytes = (text: string) => new TextEncoder().encode(text.trim()).length;
-const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-
-export function AskPanel({ category }: { category: string }) {
-    const [question, setQuestion] = useState("");
-    const [state, setState] = useState<State>({ status: "idle" });
-    const size = bytes(question);
-    const valid = size >= 3 && size <= 300;
-
-    async function ask(q: string) {
-        setState({ status: "loading" });
-        try {
-            const res = await fetch("/api/ask", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(category === GENERAL ? { q } : { q, category }),
-            });
-            const body = await res.json();
-            if (res.ok && Array.isArray(body?.segments) && Array.isArray(body?.sources)) {
-                return setState({ status: "done", question: q, answer: body });
-            }
-            if (res.status === 429) {
-                return setState({
-                    status: "error",
-                    title: "Too many questions",
-                    message: `You can ask again after ${clock(body.resetAt)}.`,
-                    retry: null,
-                });
-            }
-            if (res.status === 503) {
-                return setState({ status: "error", title: "Ask isn't available yet", message: body.error, retry: null });
-            }
-            setState({ status: "error", title: "Could not get an answer", message: body?.error ?? `HTTP ${res.status}`, retry: q });
-        } catch {
-            setState({ status: "error", title: "Could not get an answer", message: "Check your connection.", retry: q });
-        }
-    }
-
-    const submit = (e: FormEvent) => {
-        e.preventDefault();
-        if (valid) ask(question.trim());
-    };
-
+export function AskPanel({ state, category, onRetry, onClose }: Props) {
     return (
-        <section aria-label="Ask about recent news" className="mb-8 rounded-lg border border-line bg-surface p-5">
-            <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                <TextField
-                    label="Ask about recent news"
-                    hideLabel
-                    value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    readOnly={state.status === "loading"}
-                    placeholder="Ask a question about this section…"
-                    className="min-w-0 flex-1"
-                />
-                <Button type="submit" disabled={state.status === "loading" || !valid}>
-                    Ask
-                </Button>
-            </form>
-            {size > 300 && <p className="mt-2 text-sm text-ink-muted">That question is too long. Please shorten it.</p>}
+        <section aria-label="Answer" className="mb-8 rounded-lg border border-line bg-surface p-5 sm:p-7">
+            <div className="flex items-start justify-between gap-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-accent">
+                    Summary answer · {LABELS[category] ?? category}
+                </p>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    aria-label="Close answer"
+                    className="-m-3 flex h-11 w-11 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-raised hover:text-ink"
+                >
+                    <Icon name="close" size={18} />
+                </button>
+            </div>
+            <h2 className="mt-2 font-serif text-2xl font-semibold text-ink">{state.question}</h2>
 
             <div aria-live="polite" className="mt-4">
                 {state.status === "loading" && <p className="text-base text-ink-muted">Finding an answer…</p>}
 
                 {state.status === "error" && (
-                    <ErrorBanner title={state.title} message={state.message} onRetry={state.retry ? () => ask(state.retry!) : undefined} />
+                    <ErrorBanner title={state.title} message={state.message} onRetry={state.retry ? onRetry : undefined} />
                 )}
 
                 {state.status === "done" && (
                     <div className="space-y-4">
-                        <h3 className="text-sm font-semibold text-ink-muted">{state.question}</h3>
-                        <p className="text-lg leading-relaxed text-ink">
+                        <p className="font-serif text-lg leading-relaxed text-ink">
                             {state.answer.segments.map((s) => s.text + s.cites.map((n) => ` [${n}]`).join("")).join("")}
                         </p>
                         {state.answer.truncated && <p className="text-sm text-ink-muted">This answer was cut short.</p>}
@@ -103,6 +54,9 @@ export function AskPanel({ category }: { category: string }) {
                                 ))}
                             </ol>
                         )}
+                        <p className="text-xs text-ink-subtle">
+                            Summarized from article summaries only. Open the article for the full story.
+                        </p>
                     </div>
                 )}
             </div>

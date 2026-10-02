@@ -77,7 +77,7 @@ function NewsPageInner() {
     const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState("");
-    const { state: askState, ask, reset: resetAsk } = useAsk();
+    const { state: askState, ask, followUp, reset: resetAsk } = useAsk();
     const [showRelated, setShowRelated] = useState(false);
     const [userCountry, setUserCountry] = useState("us");
     const tabsRef = useRef<HTMLDivElement>(null);
@@ -276,7 +276,8 @@ function NewsPageInner() {
     const featured = searching ? articles : rest.slice(0, 9);
     const compact = searching ? [] : rest.slice(9);
     const sectionLabel = LABELS[activeCategory] ?? activeCategory;
-    const related = showRelated && askState.status === "done" ? askState.answer.related : [];
+    const firstTurn = askState.status === "idle" ? undefined : askState.thread.turns[0];
+    const related = showRelated && firstTurn ? firstTurn.answer.related : [];
     const relatedMode = related.length > 0;
     const newest = articles.reduce<string | undefined>(
         (latest, a) => (a.publishedAt && (!latest || a.publishedAt > latest) ? a.publishedAt : latest),
@@ -358,8 +359,13 @@ function NewsPageInner() {
                     <AnswerCard
                         state={askState}
                         category={activeCategory}
-                        onRetry={() => runAsk(askState.question)}
+                        onRetry={() =>
+                            askState.thread.turns.length
+                                ? followUp(askState.question, activeCategory)
+                                : runAsk(askState.question)
+                        }
                         onClose={closeAnswer}
+                        onFollowUp={(question) => followUp(question, activeCategory)}
                     />
                 )}
 

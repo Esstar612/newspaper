@@ -354,6 +354,55 @@ describe("News page", () => {
         expect(screen.queryByText(/Stories matching your question/)).not.toBeInTheDocument();
     });
 
+    it("keeps the first question's related stories through a follow-up, without reloading the grid", async () => {
+        const user = userEvent.setup();
+        params = new URLSearchParams("category=business");
+        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        const asked: Array<{ q: string; history?: unknown[] }> = [];
+        server.use(
+            http.post("*/api/ask", async ({ request }) => {
+                const body = (await request.json()) as { q: string; history?: unknown[] };
+                asked.push(body);
+                return body.q === "What did the bank do?"
+                    ? HttpResponse.json(answer("The bank held rates.", relatedStories("Related one")))
+                    : HttpResponse.json(answer("Inflation is slowing.", relatedStories("Follow-up related")));
+            })
+        );
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.type(box(), "What did the bank do?{Enter}");
+        await screen.findByText("Stories related to your question · 1");
+        const newsRequests = requests.length;
+        await user.type(screen.getByRole("textbox", { name: "Ask a follow-up" }), "Why did it hold?{Enter}");
+        expect(await screen.findByText("Inflation is slowing.")).toBeInTheDocument();
+        expect(screen.getByRole("region", { name: "Answer thread" })).toBeInTheDocument();
+        expect(screen.getByText("Stories related to your question · 1")).toBeInTheDocument();
+        expect(screen.getByText("Related one")).toBeInTheDocument();
+        expect(screen.queryByText("Follow-up related")).not.toBeInTheDocument();
+        expect(requests).toHaveLength(newsRequests);
+        expect(asked[1]).toEqual({ q: "Why did it hold?", category: "business", history: [{ q: "What did the bank do?", answer: "The bank held rates." }] });
+    });
+
+    it("retries a failed follow-up as a follow-up", async () => {
+        const user = userEvent.setup();
+        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        serveAsk(answer("The bank held rates.", relatedStories("Related one")));
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.type(box(), "What did the bank do?{Enter}");
+        await screen.findByText("Related one");
+        serveAsk({ error: "The answer service is unavailable." }, 502);
+        await user.type(screen.getByRole("textbox", { name: "Ask a follow-up" }), "Why did it hold?{Enter}");
+        await screen.findByRole("alert");
+        const asked = serveAsk(answer("Inflation is slowing."));
+        await user.click(screen.getByRole("button", { name: "Try again" }));
+        expect(await screen.findByText("Inflation is slowing.")).toBeInTheDocument();
+        expect(asked).toEqual([{ q: "Why did it hold?", history: [{ q: "What did the bank do?", answer: "The bank held rates." }] }]);
+        expect(screen.getByText("Related one")).toBeInTheDocument();
+    });
+
     it("shows the stories related to an answered question in place of the section", async () => {
         const user = userEvent.setup();
         params = new URLSearchParams("category=business");

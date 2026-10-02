@@ -498,5 +498,86 @@
     "question": "Which film won the Palme d’Or at Cannes?",
     "answerable": false,
     "gold": []
+  },
+  {
+    "id": "followup-flydubai-arrest",
+    "question": "Was anyone arrested?",
+    "previous": "Where did the FlyDubai flight to Tel Aviv land after the fight in the cockpit?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbef6f",
+        "url": "https://www.bbc.co.uk/news/articles/cqjdv7pmj9dno"
+      },
+      {
+        "id": "6abdaaff1c991e9cd7dbef61",
+        "url": "https://www.nytimes.com/live/2026/09/30/world/dubai-flight-tel-aviv-israel-pilots"
+      }
+    ]
+  },
+  {
+    "id": "followup-mattel-kreiz",
+    "question": "What is the outgoing chief going to do next?",
+    "previous": "Who is taking over as chief executive of Mattel?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbefd6",
+        "url": "https://www.nytimes.com/2026/09/30/business/paramount-ellison-kreiz-mattel.html"
+      }
+    ]
+  },
+  {
+    "id": "followup-nvidia-remaining",
+    "question": "How much is left in the program now?",
+    "previous": "How much did Nvidia add to its stock buyback?",
+    "category": "business",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da3525",
+        "url": "https://www.nytimes.com/2026/09/28/business/nvidia-stock-buyback.html"
+      }
+    ]
+  },
+  {
+    "id": "followup-starship-length",
+    "question": "How long was the mission supposed to last?",
+    "previous": "Did Starship reach orbit on its latest test flight, and how did the flight end?",
+    "category": "science",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abc597f1c991e9cd7da34cb",
+        "url": "https://www.bbc.co.uk/news/videos/c6j9xkdvrd94o"
+      }
+    ]
+  },
+  {
+    "id": "followup-fat-bear-next",
+    "question": "What happens to the winner next?",
+    "previous": "Which bear won Fat Bear Week, and which bear did it beat in the final?",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbef9d",
+        "url": "https://www.bbc.co.uk/news/videos/cqkg07lp9dvlo"
+      }
+    ]
+  },
+  {
+    "id": "followup-eiffel-name",
+    "question": "What is his name?",
+    "previous": "Why is the head of the Eiffel Tower operating company stepping down?",
+    "category": "world",
+    "answerable": true,
+    "gold": [
+      {
+        "id": "6abdaaff1c991e9cd7dbefda",
+        "url": "https://www.nytimes.com/2026/09/30/world/europe/eiffel-tower-director-resigns.html"
+      }
+    ]
   }
 ]

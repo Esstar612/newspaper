@@ -223,6 +223,47 @@ describe("/api/ask", () => {
         expect(claude).toHaveLength(1);
     });
 
+    it("searches with the previous question joined and sends earlier turns to Claude", async () => {
+        const history = [
+            { q: "What did the bank do?", answer: "It held rates." },
+            { q: "Why did it hold?", answer: "Inflation is slowing." },
+        ];
+        const res = await ask({ q: "What happens next?", category: "business", history });
+        expect(res.status).toBe(200);
+        expect((searches[0].query as { inputs: { text: string } }).inputs.text).toBe("Why did it hold?\nWhat happens next?");
+        const messages = claude[0].messages as Array<{ role: string; content: unknown }>;
+        expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant", "user"]);
+        expect(messages.slice(0, 4).map((m) => m.content)).toEqual(["What did the bank do?", "It held rates.", "Why did it hold?", "Inflation is slowing."]);
+        expect(JSON.stringify(messages.slice(0, 4))).not.toContain("search_result");
+    });
+
+    it("searches with the question alone when there is no history", async () => {
+        await ask({ q: "What did the bank do?" });
+        expect((searches[0].query as { inputs: { text: string } }).inputs.text).toBe("What did the bank do?");
+        expect((claude[0].messages as unknown[]).length).toBe(1);
+    });
+
+    it.each([
+        ["three earlier turns", [1, 2, 3].map((n) => ({ q: `Question ${n}?`, answer: "An answer." }))],
+        ["an answer over 4,000 bytes", [{ q: "What did the bank do?", answer: "a".repeat(4001) }]],
+        ["an empty answer", [{ q: "What did the bank do?", answer: "" }]],
+        ["a question under 3 bytes", [{ q: "hi", answer: "Hello." }]],
+        ["a question that is not text", [{ q: 42, answer: "An answer." }]],
+        ["an answer that is not text", [{ q: "What did the bank do?", answer: { text: "x" } }]],
+        ["a turn that is not an object", ["What did the bank do?"]],
+        ["history that is not a list", { q: "What did the bank do?", answer: "x" }],
+    ])("refuses %s before any paid call", async (_, history) => {
+        const res = await ask({ q: "What happens next?", history });
+        expect(res.status).toBe(400);
+        expect(searches).toEqual([]);
+        expect(claude).toEqual([]);
+    });
+
+    it("accepts an answer of exactly 4,000 bytes", async () => {
+        const res = await ask({ q: "What happens next?", history: [{ q: "What did the bank do?", answer: "日".repeat(1333) + "a" }] });
+        expect(res.status).toBe(200);
+    });
+
     it("uses the configured model", async () => {
         vi.stubEnv("ASK_MODEL", "claude-sonnet-5");
         await ask({ q: "What did the bank do?" });

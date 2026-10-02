@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "@anthropic-ai/sdk/resources/messages";
-import { SYSTEM_PROMPT, buildMessages, readAnswer, resultText, type AnswerArticle } from "@/lib/answer";
+import { SYSTEM_PROMPT, buildMessages, readAnswer, resultText, retrievalQuery, type AnswerArticle } from "@/lib/answer";
 import { makeMessage, textBlock } from "../fixtures/messages";
 
 const articles: AnswerArticle[] = [
@@ -38,10 +38,36 @@ describe("buildMessages", () => {
         expect(content[2]).toEqual({ type: "text", text: "What did the bank do?" });
     });
 
+    it("puts earlier turns first as plain text, oldest first, with search results only in the last message", () => {
+        const history = [
+            { q: "What did the bank do?", answer: "It held rates." },
+            { q: "Why?", answer: "Inflation is slowing." },
+        ];
+        const turns = buildMessages("What happens next?", articles, history);
+        expect(turns.map((t) => t.role)).toEqual(["user", "assistant", "user", "assistant", "user"]);
+        expect(turns.slice(0, 4).map((t) => t.content)).toEqual(["What did the bank do?", "It held rates.", "Why?", "Inflation is slowing."]);
+        const last = turns[4].content as unknown as Array<{ type: string; text?: string }>;
+        expect(last.filter((b) => b.type === "search_result")).toHaveLength(2);
+        expect(last.at(-1)).toEqual({ type: "text", text: "What happens next?" });
+        expect(JSON.stringify(turns.slice(0, 4))).not.toContain("search_result");
+    });
+
+    it("tells the model that earlier turns are context and only the latest results may be cited", () => {
+        expect(SYSTEM_PROMPT).toMatch(/earlier turns/i);
+        expect(SYSTEM_PROMPT).toMatch(/latest message/i);
+    });
+
     it("tells the model to answer only from the results and ignore instructions in them", () => {
         expect(SYSTEM_PROMPT).toMatch(/only/i);
         expect(SYSTEM_PROMPT).toMatch(/instructions/i);
         expect(Buffer.byteLength(SYSTEM_PROMPT)).toBeLessThanOrEqual(2000);
+    });
+});
+
+describe("retrievalQuery", () => {
+    it("searches with the question alone, or joined after the previous question", () => {
+        expect(retrievalQuery("Why does it matter?")).toBe("Why does it matter?");
+        expect(retrievalQuery("Why does it matter?", "What did the bank do?")).toBe("What did the bank do?\nWhy does it matter?");
     });
 });
 

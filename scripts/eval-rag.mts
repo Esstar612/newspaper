@@ -2,11 +2,18 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { Pinecone } from "@pinecone-database/pinecone";
-import { readAnswer, requestAnswer, type AnswerArticle } from "../lib/answer.ts";
+import { readAnswer, requestAnswer, retrievalQuery, type AnswerArticle } from "../lib/answer.ts";
 import { searchVectors, syncVectors, type VectorArticle } from "../lib/vectors.ts";
 import { answerForJudge, citationPrecision, coversGold, judgePrompt, mean, parseJudge, recallAtK, reciprocalRank } from "../eval/metrics.ts";
 
-type Golden = { id: string; question: string; category?: string; answerable: boolean; gold: Array<{ id: string; url: string }> };
+type Golden = {
+    id: string;
+    question: string;
+    previous?: string;
+    category?: string;
+    answerable: boolean;
+    gold: Array<{ id: string; url: string }>;
+};
 
 const ANSWER_COST = 0.022;
 const JUDGE_COST = 0.03;
@@ -26,7 +33,8 @@ async function main() {
     const golden = JSON.parse(readFileSync(new URL("../eval/golden.json", import.meta.url), "utf8")) as Golden[];
     const models = (arg("models") ?? "claude-sonnet-5").split(",");
     const retrievalOnly = process.argv.includes("--retrieval-only");
-    const estimate = retrievalOnly ? 0 : golden.length * models.length * (ANSWER_COST + JUDGE_COST);
+    const answered = golden.filter((g) => !g.previous);
+    const estimate = retrievalOnly ? 0 : answered.length * models.length * (ANSWER_COST + JUDGE_COST);
 
     console.log(`${snapshot.articles.length} articles, ${golden.length} questions, models: ${models.join(", ")}`);
     console.log(`Estimated Claude cost: about $${estimate.toFixed(2)}${retrievalOnly ? " (retrieval only)" : ""}`);
@@ -62,13 +70,16 @@ async function main() {
         }
 
         type Hits = Awaited<ReturnType<typeof searchVectors>>;
-        const rows: Array<{ g: Golden; unfiltered: Hits; filtered: Hits }> = [];
+        const rows: Array<{ g: Golden; unfiltered: Hits; filtered: Hits; bare?: Hits }> = [];
         for (const g of golden) {
-            const unfiltered = await searchVectors(g.question, { namespace });
-            const filtered = g.category ? await searchVectors(g.question, { namespace, category: g.category }) : unfiltered;
-            rows.push({ g, unfiltered, filtered });
+            const text = retrievalQuery(g.question, g.previous);
+            const unfiltered = await searchVectors(text, { namespace });
+            const filtered = g.category ? await searchVectors(text, { namespace, category: g.category }) : unfiltered;
+            const bare = g.previous ? await searchVectors(g.question, { namespace, category: g.category }) : undefined;
+            rows.push({ g, unfiltered, filtered, bare });
         }
-        const answerable = rows.filter((r) => r.g.answerable);
+        const followUps = rows.filter((r) => r.g.previous && r.g.answerable);
+        const answerable = rows.filter((r) => r.g.answerable && !r.g.previous);
         const gold = (r: (typeof rows)[number]) => r.g.gold.map((x) => x.id);
         const retrieval = {
             recallAt5: mean(answerable.map((r) => recallAtK(ids(r.unfiltered), gold(r), 5))),
@@ -77,6 +88,15 @@ async function main() {
             mrrAt8Filtered: mean(answerable.map((r) => reciprocalRank(ids(r.filtered), gold(r)))),
         };
         console.table(retrieval);
+        if (followUps.length) {
+            console.log(`Follow-ups (${followUps.length}), searched within their section:`);
+            console.table({
+                joinedRecallAt5: mean(followUps.map((r) => recallAtK(ids(r.filtered), gold(r), 5))),
+                joinedMrrAt8: mean(followUps.map((r) => reciprocalRank(ids(r.filtered), gold(r)))),
+                bareRecallAt5: mean(followUps.map((r) => recallAtK(ids(r.bare ?? []), gold(r), 5))),
+                bareMrrAt8: mean(followUps.map((r) => reciprocalRank(ids(r.bare ?? []), gold(r)))),
+            });
+        }
 
         const results: Record<string, unknown> = { namespace, retrieval, scores: rows.map((r) => ({ id: r.g.id, hits: r.filtered })) };
         const save = () => writeFileSync(new URL("../eval/results.local.json", import.meta.url), JSON.stringify(results, null, 1));
@@ -85,7 +105,7 @@ async function main() {
             const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 1 });
             for (const model of models) {
                 const graded = [];
-                for (const r of rows) {
+                for (const r of rows.filter((x) => !x.g.previous)) {
                     const articles: AnswerArticle[] = r.filtered.flatMap((h) => {
                         const a = byId.get(h.id);
                         return a ? [{ id: a._id, url: a.url, title: a.title, description: a.description }] : [];

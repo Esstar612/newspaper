@@ -64,3 +64,43 @@ test("explains the limit when too many questions are asked", async ({ page }) =>
     await box.press("Enter");
     await expect(page.getByRole("region", { name: "Answer" }).getByRole("alert")).toContainText("Too many questions");
 });
+
+test("asks a follow-up and keeps the thread", async ({ page }) => {
+    const sent: Array<{ q: string; history?: unknown[] }> = [];
+    await page.route("**/api/ask", async (route) => {
+        const body = route.request().postDataJSON() as { q: string; history?: unknown[] };
+        sent.push(body);
+        await route.fulfill({
+            json:
+                body.q === "rates"
+                    ? answer
+                    : {
+                          segments: [{ text: "Because inflation slowed", cites: [1] }],
+                          sources: [answer.sources[0]],
+                          related: [],
+                          refused: false,
+                          truncated: false,
+                      },
+        });
+    });
+    await page.goto("/news?category=business");
+    const box = page.getByRole("combobox", { name: "Search headlines or ask a question" });
+    await box.fill("rates");
+    await box.press("Enter");
+    await expect(page.getByText("Stories related to your question · 2")).toBeVisible();
+
+    await page.getByRole("textbox", { name: "Ask a follow-up" }).fill("Why did it hold?");
+    await page.getByRole("textbox", { name: "Ask a follow-up" }).press("Enter");
+
+    const thread = page.getByRole("region", { name: "Answer thread" });
+    await expect(thread.getByText("Summary answer · Business · 2 questions")).toBeVisible();
+    await expect(thread.getByRole("heading", { name: "Why did it hold?" })).toBeVisible();
+    await expect(thread.getByRole("button", { name: /rates/ })).toHaveAttribute("aria-expanded", "false");
+    await expect(thread.getByText("Used in both answers")).toBeVisible();
+    await expect(page.getByText("Stories related to your question · 2")).toBeVisible();
+    expect(sent[1]).toEqual({
+        q: "Why did it hold?",
+        category: "business",
+        history: [{ q: "rates", answer: "Business story 01 was the top story and a central bank held rates." }],
+    });
+});

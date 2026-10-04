@@ -6,6 +6,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { delay, http, HttpResponse } from "msw";
 import { server } from "../msw";
 import { useAsk, type AskState } from "@/lib/useAsk";
+import { utf8Bytes } from "@/lib/format";
 
 const answer = (text: string, related: object[] = []) => ({ segments: [{ text, cites: [] }], sources: [], related, refused: false, truncated: false });
 
@@ -41,7 +42,7 @@ describe("useAsk", () => {
         const sent = serve(answer("Rates held."));
         const { result } = track();
         act(() => void result.current.ask("What did the bank do?", "business"));
-        expect(result.current.state).toEqual({ status: "loading", question: "What did the bank do?" });
+        expect(result.current.state).toEqual({ status: "loading", question: "What did the bank do?", thread: { turns: [], sources: [] } });
         await settled(result);
         expect(result.current.state).toMatchObject({ status: "done", question: "What did the bank do?", answer: answer("Rates held.") });
         expect(sent).toEqual([{ q: "What did the bank do?", category: "business" }]);
@@ -67,6 +68,7 @@ describe("useAsk", () => {
             title: "Too many questions",
             message: `You can ask again after ${time}.`,
             retry: false,
+            thread: { turns: [], sources: [] },
         });
     });
 
@@ -181,5 +183,154 @@ describe("useAsk", () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
         expect(result.current.state).toEqual({ status: "idle" });
         expect(states.some((s) => s.status === "done" || s.status === "error")).toBe(false);
+    });
+});
+
+const source = (n: number, id: string, extra: Record<string, unknown> = {}) => ({
+    n,
+    url: `https://example.com/${id}`,
+    title: `Story ${id}`,
+    source: "BBC News",
+    ...extra,
+});
+
+function serveByQuestion(replies: Record<string, object>) {
+    const sent: Array<{ q: string; category?: string; history?: Array<{ q: string; answer: string }> }> = [];
+    server.use(
+        http.post("*/api/ask", async ({ request }) => {
+            const body = (await request.json()) as (typeof sent)[number];
+            sent.push(body);
+            return HttpResponse.json(replies[body.q]);
+        })
+    );
+    return sent;
+}
+
+async function run(result: { current: ReturnType<typeof useAsk> }, step: (hook: ReturnType<typeof useAsk>) => Promise<AskState | null>) {
+    let resolved: AskState | null = null;
+    await act(async () => {
+        resolved = await step(result.current);
+    });
+    return resolved as AskState | null;
+}
+
+describe("useAsk threads", () => {
+    it("sends the earlier turns as plain-text history, oldest first, at most two", async () => {
+        const sent = serveByQuestion({
+            "First question?": { ...answer("First answer"), segments: [{ text: "First answer", cites: [1] }], sources: [source(1, "a")] },
+            "Second question?": answer("Second answer."),
+            "Third question?": answer("Third answer."),
+            "Fourth question?": answer("Fourth answer."),
+        });
+        const { result } = track();
+        await run(result, (h) => h.ask("First question?", "business"));
+        await run(result, (h) => h.followUp("Second question?", "business"));
+        await run(result, (h) => h.followUp("Third question?", "business"));
+        await run(result, (h) => h.followUp("Fourth question?", "business"));
+        expect(sent[0]).toEqual({ q: "First question?", category: "business" });
+        expect(sent[1].history).toEqual([{ q: "First question?", answer: "First answer" }]);
+        expect(sent[2].history).toEqual([
+            { q: "First question?", answer: "First answer" },
+            { q: "Second question?", answer: "Second answer." },
+        ]);
+        expect(sent[3].history?.map((h) => h.q)).toEqual(["Second question?", "Third question?"]);
+    });
+
+    it("cuts a long earlier answer to 4,000 bytes on a character boundary", async () => {
+        const long = "日本".repeat(1000);
+        const sent = serveByQuestion({ "First question?": answer(long), "Second question?": answer("Short.") });
+        const { result } = track();
+        await run(result, (h) => h.ask("First question?", "business"));
+        await run(result, (h) => h.followUp("Second question?", "business"));
+        const sentAnswer = sent[1].history![0].answer;
+        expect(utf8Bytes(sentAnswer)).toBeLessThanOrEqual(4000);
+        expect(long.startsWith(sentAnswer)).toBe(true);
+    });
+
+    it("leaves out an earlier turn whose answer has no text", async () => {
+        const sent = serveByQuestion({
+            "First question?": { ...answer(""), segments: [], truncated: true },
+            "Second question?": answer("Second answer."),
+        });
+        const { result } = track();
+        await run(result, (h) => h.ask("First question?", "business"));
+        await run(result, (h) => h.followUp("Second question?", "business"));
+        expect(sent[1].history).toEqual([]);
+    });
+
+    it("keeps one number per source across the thread and counts the answers that use it", async () => {
+        serveByQuestion({
+            "First question?": {
+                ...answer(""),
+                segments: [{ text: "One", cites: [1] }, { text: " two", cites: [2] }],
+                sources: [source(1, "a", { publishedAt: "2026-10-01T09:00:00.000Z" }), source(2, "b")],
+            },
+            "Second question?": {
+                ...answer(""),
+                segments: [{ text: "New", cites: [1] }, { text: " and old", cites: [2] }],
+                sources: [source(1, "c"), source(2, "a")],
+            },
+        });
+        const { result } = track();
+        await run(result, (h) => h.ask("First question?", "business"));
+        const done = await run(result, (h) => h.followUp("Second question?", "business"));
+        if (done?.status !== "done") throw new Error("expected an answer");
+        expect(done.thread.turns.map((t) => t.question)).toEqual(["First question?", "Second question?"]);
+        expect(done.thread.turns[1].answer.segments).toEqual([
+            { text: "New", cites: [3] },
+            { text: " and old", cites: [1] },
+        ]);
+        expect(done.thread.sources.map((s) => [s.n, s.url, s.uses])).toEqual([
+            [1, "https://example.com/a", 2],
+            [2, "https://example.com/b", 1],
+            [3, "https://example.com/c", 1],
+        ]);
+        expect(done.thread.sources[0].publishedAt).toBe("2026-10-01T09:00:00.000Z");
+    });
+
+    it("keeps the earlier turns while a follow-up is pending or fails", async () => {
+        serveByQuestion({ "First question?": answer("First answer.") });
+        const { result } = track();
+        await run(result, (h) => h.ask("First question?", "business"));
+        server.use(http.post("*/api/ask", () => HttpResponse.json({ error: "The answer service is unavailable." }, { status: 502 })));
+        const failed = await run(result, (h) => h.followUp("Second question?", "business"));
+        expect(failed).toMatchObject({ status: "error", question: "Second question?", retry: true });
+        expect(failed!.status !== "idle" && failed!.thread.turns.map((t) => t.question)).toEqual(["First question?"]);
+    });
+
+    it("starts a new thread when the top box asks again", async () => {
+        const sent = serveByQuestion({
+            "First question?": answer("First answer."),
+            "Second question?": answer("Second answer."),
+            "New topic?": answer("New answer."),
+        });
+        const { result } = track();
+        await run(result, (h) => h.ask("First question?", "business"));
+        await run(result, (h) => h.followUp("Second question?", "business"));
+        const fresh = await run(result, (h) => h.ask("New topic?", "business"));
+        expect(sent[2].history).toBeUndefined();
+        expect(fresh!.status !== "idle" && fresh!.thread.turns.map((t) => t.question)).toEqual(["New topic?"]);
+    });
+
+    it("drops a follow-up's reply after a reset", async () => {
+        serveByQuestion({ "First question?": answer("First answer.") });
+        const { result } = track();
+        await run(result, (h) => h.ask("First question?", "business"));
+        let finished = false;
+        server.use(
+            http.post("*/api/ask", async () => {
+                await delay(100);
+                finished = true;
+                return HttpResponse.json(answer("Too late."));
+            })
+        );
+        let pending: Promise<AskState | null> = Promise.resolve(null);
+        act(() => {
+            pending = result.current.followUp("Second question?", "business");
+        });
+        act(() => result.current.reset());
+        expect(await pending).toBeNull();
+        await waitFor(() => expect(finished).toBe(true));
+        expect(result.current.state).toEqual({ status: "idle" });
     });
 });

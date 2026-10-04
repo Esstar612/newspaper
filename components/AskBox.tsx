@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { GENERAL, LABELS } from "@/lib/categories";
+import { WHEN, isWhen, type When } from "@/lib/when";
 import { relativeTime, utf8Bytes } from "@/lib/format";
 import type { Article } from "@/components/ArticleCard";
 import { ArticleThumb } from "@/components/ArticleThumb";
@@ -9,6 +10,8 @@ import { Icon, cn } from "@/components/ui";
 
 type Props = {
     category: string;
+    when: When;
+    onWhenChange: (when: When) => void;
     onSubmit: (query: string) => void;
     debounceMs?: number;
 };
@@ -16,7 +19,7 @@ type Props = {
 const typingInField = (target: EventTarget | null) =>
     target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
-export function AskBox({ category, onSubmit, debounceMs = 250 }: Props) {
+export function AskBox({ category, when, onWhenChange, onSubmit, debounceMs = 250 }: Props) {
     const [query, setQuery] = useState("");
     const [open, setOpen] = useState(false);
     const [active, setActive] = useState(0);
@@ -50,6 +53,7 @@ export function AskBox({ category, onSubmit, debounceMs = 250 }: Props) {
             url.searchParams.set("q", trimmed);
             url.searchParams.set("limit", "5");
             if (category !== GENERAL) url.searchParams.set("category", category);
+            if (when !== "any") url.searchParams.set("when", when);
             fetch(url, { signal: controller.signal })
                 .then((res) => (res.ok ? res.json() : { articles: [] }))
                 .then((data) => {
@@ -60,7 +64,7 @@ export function AskBox({ category, onSubmit, debounceMs = 250 }: Props) {
                 .catch(() => undefined);
         }, debounceMs);
         return cancelMatches;
-    }, [trimmed, category, debounceMs, cancelMatches]);
+    }, [trimmed, category, when, debounceMs, cancelMatches]);
 
     useEffect(() => {
         const focusOnSlash = (e: globalThis.KeyboardEvent) => {
@@ -96,7 +100,7 @@ export function AskBox({ category, onSubmit, debounceMs = 250 }: Props) {
 
     return (
         <form role="search" onSubmit={submit} className="relative w-full lg:w-[560px] lg:shrink-0">
-            <div className="flex h-14 items-center gap-2.5 rounded-xl border border-line-strong bg-surface pl-4 pr-1.5 focus-within:border-accent">
+            <div className="flex min-h-14 flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-line-strong bg-surface py-1.5 pl-4 pr-1.5 focus-within:border-accent">
                 <Icon name="ask" size={20} className="shrink-0 text-accent" />
                 <label htmlFor={`${id}-input`} className="sr-only">
                     Search headlines or ask a question
@@ -126,6 +130,21 @@ export function AskBox({ category, onSubmit, debounceMs = 250 }: Props) {
                 <span className="hidden whitespace-nowrap rounded-full bg-raised px-2.5 py-1 text-xs font-medium text-ink-muted sm:inline">
                     in {LABELS[category] ?? category}
                 </span>
+                <label htmlFor={`${id}-when`} className="sr-only">
+                    When
+                </label>
+                <select
+                    id={`${id}-when`}
+                    value={when}
+                    onChange={(e) => isWhen(e.target.value) && onWhenChange(e.target.value)}
+                    className="order-last mb-1 w-full cursor-pointer rounded-full bg-raised px-2.5 py-1 text-xs font-medium text-ink-muted sm:order-none sm:mb-0 sm:w-auto"
+                >
+                    {Object.entries(WHEN).map(([value, label]) => (
+                        <option key={value} value={value}>
+                            {label}
+                        </option>
+                    ))}
+                </select>
                 {!query && (
                     <kbd className="hidden h-6 items-center rounded border border-line-strong px-2 text-xs text-ink-muted sm:flex">/</kbd>
                 )}

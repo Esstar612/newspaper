@@ -8,6 +8,7 @@ import { AskBox } from "@/components/AskBox";
 import { AnswerCard } from "@/components/AnswerCard";
 import { relativeTime, utf8Bytes } from "@/lib/format";
 import { useAsk, type AskState } from "@/lib/useAsk";
+import type { When } from "@/lib/when";
 import { Button, EmptyState, ErrorBanner, Icon, Skeleton, cn } from "@/components/ui";
 
 type NewsResponse = {
@@ -32,7 +33,7 @@ const askable = (query: string) => {
     return size >= 3 && size <= 300;
 };
 
-type LoadOptions = { cursor?: string | null; more?: boolean; fallback?: boolean };
+type LoadOptions = { cursor?: string | null; more?: boolean; fallback?: boolean; when?: When };
 
 function ArticleSkeletons() {
     return (
@@ -77,6 +78,8 @@ function NewsPageInner() {
     const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState("");
+    const [searchWhen, setSearchWhen] = useState<When>("any");
+    const [when, setWhen] = useState<When>("any");
     const { state: askState, ask, followUp, reset: resetAsk } = useAsk();
     const [showRelated, setShowRelated] = useState(false);
     const [userCountry, setUserCountry] = useState("us");
@@ -134,7 +137,7 @@ function NewsPageInner() {
 
             if (!res.ok) throw new Error("Ingest failed");
 
-            await fetchArticles(activeCategory, searchQuery, { fallback: askable(searchQuery) });
+            await fetchArticles(activeCategory, searchQuery, { fallback: askable(searchQuery), when: searchWhen });
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : "Ingest failed");
             setLoading(false);
@@ -142,7 +145,11 @@ function NewsPageInner() {
     }
 
     const fetchArticles = useCallback(
-        async (category: string, search: string = "", { cursor, more: isLoadMore = false, fallback = false }: LoadOptions = {}) => {
+        async (
+            category: string,
+            search: string = "",
+            { cursor, more: isLoadMore = false, fallback = false, when = "any" }: LoadOptions = {}
+        ) => {
             const run = isLoadMore ? latestLoad.current : ++latestLoad.current;
             const current = () => run === latestLoad.current;
             if (isLoadMore) setLoadingMore(true);
@@ -157,6 +164,7 @@ function NewsPageInner() {
                 url.searchParams.set("limit", String(limit));
                 if (category && category !== GENERAL) url.searchParams.set("category", category);
                 if (q) url.searchParams.set("q", q);
+                if (q && when !== "any") url.searchParams.set("when", when);
                 if (cursor) url.searchParams.set("cursor", cursor);
 
                 const res = await fetch(url.toString(), { cache: "no-store" });
@@ -241,22 +249,25 @@ function NewsPageInner() {
             setShowRelated(true);
             return;
         }
+        const window = result.status === "idle" ? "any" : result.thread.when;
         setSearchQuery(query);
-        fetchArticles(activeCategory, query, { fallback: true });
+        setSearchWhen(window);
+        fetchArticles(activeCategory, query, { fallback: true, when: window });
     };
 
-    const runAsk = async (query: string) => afterAsk(await ask(query, activeCategory), query);
+    const runAsk = async (query: string, window: When) => afterAsk(await ask(query, activeCategory, window), query);
 
     const handleBoxSubmit = (query: string) => {
         setShowRelated(false);
         if (askable(query)) {
             if (searchQuery) clearFilter();
-            runAsk(query);
+            runAsk(query, when);
             return;
         }
         resetAsk();
         setSearchQuery(query);
-        fetchArticles(activeCategory, query);
+        setSearchWhen(when);
+        fetchArticles(activeCategory, query, { when });
     };
 
     const showAll = () => {
@@ -292,7 +303,13 @@ function NewsPageInner() {
                         <h1 className="font-serif text-4xl font-semibold text-ink">Latest News</h1>
                         <p className="mt-2 text-lg text-ink-muted">Top stories from the New York Times and the BBC</p>
                     </div>
-                    <AskBox key={activeCategory} category={activeCategory} onSubmit={handleBoxSubmit} />
+                    <AskBox
+                        key={activeCategory}
+                        category={activeCategory}
+                        when={when}
+                        onWhenChange={setWhen}
+                        onSubmit={handleBoxSubmit}
+                    />
                 </div>
 
                 <div className="mb-6 flex flex-col gap-3 border-y border-line py-3 sm:flex-row sm:items-center sm:gap-4">
@@ -362,7 +379,7 @@ function NewsPageInner() {
                         onRetry={() =>
                             askState.thread.turns.length
                                 ? followUp(askState.question, activeCategory)
-                                : runAsk(askState.question)
+                                : runAsk(askState.question, askState.thread.when)
                         }
                         onClose={closeAnswer}
                         onFollowUp={(question) => followUp(question, activeCategory)}
@@ -397,7 +414,9 @@ function NewsPageInner() {
                                 <ErrorBanner
                                     title="Could not load articles"
                                     message={error}
-                                    onRetry={() => fetchArticles(activeCategory, searchQuery, { fallback: askable(searchQuery) })}
+                                    onRetry={() =>
+                                        fetchArticles(activeCategory, searchQuery, { fallback: askable(searchQuery), when: searchWhen })
+                                    }
                                 />
                             )}
 
@@ -457,7 +476,9 @@ function NewsPageInner() {
                             {!loading && articles.length > 0 && nextCursor && (
                                 <div className="mt-10 text-center">
                                     <Button
-                                        onClick={() => fetchArticles(activeCategory, searchQuery, { cursor: nextCursor, more: true })}
+                                        onClick={() =>
+                                            fetchArticles(activeCategory, searchQuery, { cursor: nextCursor, more: true, when: searchWhen })
+                                        }
                                         disabled={loadingMore}
                                         variant="secondary"
                                     >

@@ -11,7 +11,7 @@ type CardState = ComponentProps<typeof AnswerCard>["state"];
 type Answer = Extract<CardState, { status: "done" }>["answer"];
 type Thread = CardState["thread"];
 
-const EMPTY: Thread = { turns: [], sources: [] };
+const EMPTY: Thread = { turns: [], sources: [], when: "any" };
 
 const threadOf = (...turns: Array<{ question: string; answer: Answer }>): Thread => {
     const sources: Thread["sources"] = [];
@@ -21,7 +21,7 @@ const threadOf = (...turns: Array<{ question: string; answer: Answer }>): Thread
             if (known) known.uses++;
             else sources.push({ ...s, uses: 1 });
         }
-    return { turns, sources };
+    return { turns, sources, when: "any" };
 };
 
 const answer = {
@@ -239,5 +239,25 @@ describe("AnswerCard threads", () => {
     it("offers no follow-up before the first answer lands", () => {
         show({ status: "loading", question, thread: EMPTY });
         expect(screen.queryByRole("textbox", { name: "Ask a follow-up" })).not.toBeInTheDocument();
+    });
+});
+
+describe("AnswerCard window", () => {
+    it("names a chosen window in the label, before the question count", () => {
+        const one = done();
+        if (one.status !== "done") throw new Error("expected done");
+        const { view } = show({ ...one, thread: { ...one.thread, when: "week" } });
+        expect(screen.getByText("Summary answer · Business · Past week")).toBeInTheDocument();
+        view.unmount();
+        const two = threaded();
+        if (two.status !== "done") throw new Error("expected done");
+        show({ ...two, thread: { ...two.thread, when: "week" } });
+        expect(screen.getByText("Summary answer · Business · Past week · 2 questions")).toBeInTheDocument();
+    });
+
+    it("never names any time", () => {
+        show(done());
+        expect(screen.getByText("Summary answer · Business")).toBeInTheDocument();
+        expect(screen.queryByText(/Any time/)).not.toBeInTheDocument();
     });
 });

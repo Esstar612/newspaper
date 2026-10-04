@@ -53,20 +53,20 @@ const PINECONE = "https://newspaper-articles-test.svc.pinecone.io";
 const ANTHROPIC = "https://api.anthropic.com/v1/messages";
 const DATADOG = "https://api.datadoghq.com/api/v2/series";
 
-const article = (id: string, title: string) => ({
+const article = (id: string, title: string, publishedAt = "2026-10-01T09:00:00.000Z") => ({
     _id: id,
     title,
     description: `${title}, in detail.`,
     url: `https://example.com/${id}`,
     imageUrl: `https://example.com/${id}.jpg`,
     source: "BBC News",
-    publishedAt: "2026-10-01T09:00:00.000Z",
+    publishedAt,
     tags: ["business"],
     providerId: "not-for-clients",
 });
 
-const card = (id: string, title: string) => {
-    const { _id, description, url, imageUrl, source, publishedAt, tags } = article(id, title);
+const card = (id: string, title: string, date?: string) => {
+    const { _id, description, url, imageUrl, source, publishedAt, tags } = article(id, title, date);
     return { _id, title, description, url, imageUrl, source, publishedAt, tags };
 };
 
@@ -191,20 +191,50 @@ describe("/api/ask", () => {
         expect(outcomes()).toEqual(["outcome:answered"]);
     });
 
-    it("returns every retrieved article as related, in search rank order", async () => {
-        hits = ["a2", "a1"];
+    it("returns every retrieved article as related, newest first, while Claude reads them in rank order", async () => {
+        db.articles = [article("a1", "Bank holds rates", "2026-09-20T09:00:00.000Z"), article("a2", "Jobs report", "2026-10-02T09:00:00.000Z")];
+        hits = ["a1", "a2"];
         const res = await ask({ q: "What did the bank do?" });
-        expect((await res.json()).related).toEqual([card("a2", "Jobs report"), card("a1", "Bank holds rates")]);
+        expect((await res.json()).related).toEqual([
+            card("a2", "Jobs report", "2026-10-02T09:00:00.000Z"),
+            card("a1", "Bank holds rates", "2026-09-20T09:00:00.000Z"),
+        ]);
+        const sent = (claude[0].messages as Array<{ content: Array<{ type: string; source?: string }> }>)[0].content;
+        expect(sent.filter((b) => b.type === "search_result").map((b) => b.source)).toEqual(["https://example.com/a1", "https://example.com/a2"]);
     });
 
-    it("shows only related stories that clear the score cutoff, still in rank order, while Claude reads them all", async () => {
-        db.articles.push(article("a3", "Rates outlook"));
+    it("shows only related stories that clear the score cutoff, newest first, while Claude reads them all", async () => {
+        db.articles = [
+            article("a1", "Bank holds rates", "2026-09-20T09:00:00.000Z"),
+            article("a2", "Jobs report", "2026-10-02T09:00:00.000Z"),
+            article("a3", "Rates outlook", "2026-10-03T09:00:00.000Z"),
+        ];
         hits = ["a1", "a2", "a3"];
         scores = { a1: 0.6, a2: 0.2, a3: 0.5 };
         const res = await ask({ q: "What did the bank do?" });
-        expect((await res.json()).related).toEqual([card("a1", "Bank holds rates"), card("a3", "Rates outlook")]);
+        expect((await res.json()).related).toEqual([
+            card("a3", "Rates outlook", "2026-10-03T09:00:00.000Z"),
+            card("a1", "Bank holds rates", "2026-09-20T09:00:00.000Z"),
+        ]);
         const sent = (claude[0].messages as Array<{ content: Array<{ type: string }> }>)[0].content;
         expect(sent.filter((b) => b.type === "search_result")).toHaveLength(3);
+    });
+
+    it("searches only the chosen window, counted back from the server's clock", async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-10-04T12:00:00Z"));
+        await ask({ q: "What did the bank do?", category: "business", when: "week" });
+        expect((searches[0].query as { filter: unknown }).filter).toEqual({
+            $and: [{ tags: { $in: ["business"] } }, { publishedAt: { $gte: Date.parse("2026-09-27T12:00:00Z") } }],
+        });
+    });
+
+    it.each(["fortnight", 7, "toString"])("refuses an unknown window (%s) before any paid call", async (when) => {
+        const res = await ask({ q: "What did the bank do?", when });
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toMatch(/window/);
+        expect(searches).toEqual([]);
+        expect(claude).toEqual([]);
     });
 
     it("keeps a story at exactly the cutoff and drops one just under it", async () => {

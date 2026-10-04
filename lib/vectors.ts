@@ -78,10 +78,14 @@ export async function syncVectors(
 
 export async function searchVectors(
     text: string,
-    { category, topK = 8, ...options }: Options & { category?: string; topK?: number } = {}
+    { category, topK = 8, since, ...options }: Options & { category?: string; topK?: number; since?: Date } = {}
 ): Promise<Array<{ id: string; score: number }>> {
     if (!vectorsConfigured()) return [];
-    const filter = category && category !== GENERAL ? { tags: { $in: [category] } } : undefined;
+    const clauses = [
+        ...(category && category !== GENERAL ? [{ tags: { $in: [category] } }] : []),
+        ...(since ? [{ publishedAt: { $gte: since.getTime() } }] : []),
+    ];
+    const filter = clauses.length === 0 ? undefined : clauses.length === 1 ? clauses[0] : { $and: clauses };
     const response = await index(options).searchRecords({
         query: { topK, inputs: { text }, ...(filter ? { filter } : {}) },
         fields: ["url"],

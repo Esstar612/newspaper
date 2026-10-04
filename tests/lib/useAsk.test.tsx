@@ -42,7 +42,7 @@ describe("useAsk", () => {
         const sent = serve(answer("Rates held."));
         const { result } = track();
         act(() => void result.current.ask("What did the bank do?", "business"));
-        expect(result.current.state).toEqual({ status: "loading", question: "What did the bank do?", thread: { turns: [], sources: [] } });
+        expect(result.current.state).toEqual({ status: "loading", question: "What did the bank do?", thread: { turns: [], sources: [], when: "any" } });
         await settled(result);
         expect(result.current.state).toMatchObject({ status: "done", question: "What did the bank do?", answer: answer("Rates held.") });
         expect(sent).toEqual([{ q: "What did the bank do?", category: "business" }]);
@@ -68,7 +68,7 @@ describe("useAsk", () => {
             title: "Too many questions",
             message: `You can ask again after ${time}.`,
             retry: false,
-            thread: { turns: [], sources: [] },
+            thread: { turns: [], sources: [], when: "any" },
         });
     });
 
@@ -332,5 +332,32 @@ describe("useAsk threads", () => {
         expect(await pending).toBeNull();
         await waitFor(() => expect(finished).toBe(true));
         expect(result.current.state).toEqual({ status: "idle" });
+    });
+});
+
+describe("useAsk windows", () => {
+    it("sends the window it was asked with, and leaves it out for any time", async () => {
+        const sent = serveByQuestion({ "First question?": answer("First."), "Other question?": answer("Other.") });
+        const { result } = track();
+        const done = await run(result, (h) => h.ask("First question?", "business", "week"));
+        expect(sent[0]).toEqual({ q: "First question?", category: "business", when: "week" });
+        expect(done!.status !== "idle" && done!.thread.when).toBe("week");
+        await run(result, (h) => h.ask("Other question?", "business", "any"));
+        expect(sent[1]).toEqual({ q: "Other question?", category: "business" });
+    });
+
+    it("keeps the thread's window for follow-ups", async () => {
+        const sent = serveByQuestion({ "First question?": answer("First."), "Second question?": answer("Second.") });
+        const { result } = track();
+        await run(result, (h) => h.ask("First question?", "business", "month"));
+        await run(result, (h) => h.followUp("Second question?", "business"));
+        expect(sent[1]).toMatchObject({ q: "Second question?", when: "month" });
+    });
+
+    it("keeps the window on a failed first question", async () => {
+        server.use(http.post("*/api/ask", () => HttpResponse.json({ error: "The answer service is unavailable." }, { status: 502 })));
+        const { result } = track();
+        const failed = await run(result, (h) => h.ask("First question?", "business", "week"));
+        expect(failed!.status !== "idle" && failed!.thread.when).toBe("week");
     });
 });

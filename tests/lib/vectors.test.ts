@@ -191,6 +191,22 @@ describe("searchVectors", () => {
         await searchVectors("rates", { category: "business", maxRetries: 0 });
         expect((bodies[0].query as Record<string, unknown>).filter).toEqual({ tags: { $in: ["business"] } });
     });
+
+    it("filters by publication date alone in Top Stories", async () => {
+        const bodies = serveSearch();
+        const since = new Date("2026-09-27T12:00:00Z");
+        await searchVectors("rates", { category: "general", since, maxRetries: 0 });
+        expect((bodies[0].query as Record<string, unknown>).filter).toEqual({ publishedAt: { $gte: since.getTime() } });
+    });
+
+    it("combines the section and the publication date with $and", async () => {
+        const bodies = serveSearch();
+        const since = new Date("2026-09-27T12:00:00Z");
+        await searchVectors("rates", { category: "business", since, maxRetries: 0 });
+        expect((bodies[0].query as Record<string, unknown>).filter).toEqual({
+            $and: [{ tags: { $in: ["business"] } }, { publishedAt: { $gte: since.getTime() } }],
+        });
+    });
 });
 
 describe("deleteVectors", () => {

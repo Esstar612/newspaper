@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GENERAL } from "@/lib/categories";
 import { cutToBytes } from "@/lib/format";
+import type { When } from "@/lib/when";
 import type { Article } from "@/components/ArticleCard";
 
 type Source = { n: number; url: string; title: string; source?: string; publishedAt?: string; imageUrl?: string };
@@ -17,6 +18,7 @@ export type Answer = {
 export type Thread = {
     turns: Array<{ question: string; answer: Answer }>;
     sources: Array<Source & { uses: number }>;
+    when: When;
 };
 
 export type AskState =
@@ -27,7 +29,7 @@ export type AskState =
 
 type History = Array<{ q: string; answer: string }>;
 
-const EMPTY: Thread = { turns: [], sources: [] };
+const EMPTY: Thread = { turns: [], sources: [], when: "any" };
 const MAX_HISTORY = 2;
 const MAX_ANSWER_BYTES = 4_000;
 
@@ -64,7 +66,10 @@ function addTurn(thread: Thread, question: string, answer: Answer): { thread: Th
         segments: answer.segments.map((s) => ({ ...s, cites: s.cites.flatMap((n) => number.get(n) ?? []) })),
         sources: answer.sources.flatMap((s) => sources.find((t) => t.url === s.url) ?? []),
     };
-    return { thread: { turns: [...thread.turns, { question, answer: remapped }], sources }, answer: remapped };
+    return {
+        thread: { turns: [...thread.turns, { question, answer: remapped }], sources, when: thread.when },
+        answer: remapped,
+    };
 }
 
 export function useAsk() {
@@ -104,6 +109,7 @@ export function useAsk() {
                 body: JSON.stringify({
                     q: question,
                     ...(category === GENERAL ? {} : { category }),
+                    ...(earlier.when === "any" ? {} : { when: earlier.when }),
                     ...(earlier.turns.length ? { history } : {}),
                 }),
                 signal: controller.signal,
@@ -124,9 +130,10 @@ export function useAsk() {
     }, []);
 
     const ask = useCallback(
-        (question: string, category: string) => {
-            thread.current = EMPTY;
-            return send(question, category, EMPTY);
+        (question: string, category: string, when: When = "any") => {
+            const fresh: Thread = { ...EMPTY, when };
+            thread.current = fresh;
+            return send(question, category, fresh);
         },
         [send]
     );

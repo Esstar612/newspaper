@@ -5,6 +5,7 @@ import { Article } from "@/models/Article";
 import { AskUsage } from "@/models/AskUsage";
 import { readAnswer, requestAnswer, retrievalQuery, type AnswerArticle, type Turn } from "@/lib/answer";
 import { isCategory } from "@/lib/categories";
+import { isWhen, sinceFor, type When } from "@/lib/when";
 import { askSeries, sendMetrics, type AskOutcome } from "@/lib/metrics";
 import { incrementUpdate, takeSlot } from "@/lib/rate-limit";
 import { deleteVectors, searchVectors } from "@/lib/vectors";
@@ -53,15 +54,18 @@ function parseHistory(value: unknown): Turn[] | null {
     return turns;
 }
 
-function parse(body: unknown): { q: string; category?: string; history: Turn[] } | null {
+const time = (d: Date | string | null | undefined) => (d ? new Date(d).getTime() : 0);
+
+function parse(body: unknown): { q: string; category?: string; history: Turn[]; when: When } | null {
     if (!body || typeof body !== "object") return null;
-    const { q, category, history } = body as Record<string, unknown>;
+    const { q, category, history, when = "any" } = body as Record<string, unknown>;
     const asked = question(q);
     if (!asked) return null;
     if (category !== undefined && (typeof category !== "string" || !isCategory(category))) return null;
     const turns = parseHistory(history);
     if (!turns) return null;
-    return { q: asked, category, history: turns };
+    if (!isWhen(when)) return null;
+    return { q: asked, category, history: turns, when };
 }
 
 export function createAskHandler({
@@ -81,7 +85,7 @@ export function createAskHandler({
         const input = parse(await req.json().catch(() => null));
         if (!input) {
             return NextResponse.json(
-                { error: "Ask a question of 3 to 300 bytes (300 plain-text characters), optionally with a valid section and up to 2 earlier turns." },
+                { error: "Ask a question of 3 to 300 bytes (300 plain-text characters), optionally with a valid section, up to 2 earlier turns, and a window of any, week, month or year." },
                 { status: 400 }
             );
         }
@@ -102,6 +106,7 @@ export function createAskHandler({
 
             const hits = await searchVectors(retrievalQuery(input.q, input.history.at(-1)?.q), {
                 category: input.category,
+                since: sinceFor(input.when, now),
                 maxRetries,
             });
             const ids = hits.map((h) => h.id);
@@ -147,6 +152,7 @@ export function createAskHandler({
                     tags: d.tags ?? [],
                 });
             }
+            related.sort((a, b) => time(b.publishedAt) - time(a.publishedAt));
 
             if (articles.length === 0) {
                 report("no_match");

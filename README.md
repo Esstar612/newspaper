@@ -106,7 +106,7 @@
 
 ### Testing & Operations
 - **Vitest + React Testing Library + MSW** - Unit, component and route tests with no network access
-- **Playwright** - End-to-end flows on Chromium, Firefox, WebKit, Pixel 7 and iPhone 15
+- **Playwright** - End-to-end flows on Chromium, Firefox and WebKit, at desktop and phone sizes
 - **GitHub Actions** - Type check, lint, unit tests and the Playwright matrix on every pull request
 - **Datadog** - Cron and Ask metrics, with monitors kept as code
 - **Vercel** - Deployment, hosting and cron jobs
@@ -330,7 +330,7 @@ Everything except Claude runs on free tiers. One measured call (Sonnet 5, eight 
 ## 🧪 Testing
 
 - **308 unit tests** across 25 files (Vitest): helpers, hooks, components, pages and every API route. MSW stands in for every external API, so the suite never touches the network.
-- **21 Playwright flows**, run on five projects (Chromium, Firefox, WebKit, Pixel 7, iPhone 15) against a production build and a seeded MongoDB container. Any request that leaves the origin, or an `/api/ask` call a test has not stubbed, fails the test.
+- **21 Playwright flows** against a production build and a seeded MongoDB container. CI runs them on desktop Chromium, desktop Firefox and iPhone 15 (WebKit at phone size), which covers all three browser engines and the phone layout; desktop WebKit and Pixel 7 projects remain for local runs. Any request that leaves the origin, or an `/api/ask` call a test has not stubbed, fails the test.
 - **GitHub Actions** runs the type check, lint, unit tests and the Playwright matrix on every pull request, and again on `main`.
 
 ```bash

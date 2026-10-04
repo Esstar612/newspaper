@@ -99,7 +99,7 @@ export function AskBox({ category, when, onWhenChange, onSubmit, debounceMs = 25
     };
 
     return (
-        <form role="search" onSubmit={submit} className="relative w-full lg:w-[560px] lg:shrink-0">
+        <form role="search" onSubmit={submit} className="relative w-full lg:w-[640px] lg:shrink-0">
             <div className="flex min-h-14 flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-line-strong bg-surface py-1.5 pl-4 pr-1.5 focus-within:border-accent">
                 <Icon name="ask" size={20} className="shrink-0 text-accent" />
                 <label htmlFor={`${id}-input`} className="sr-only">

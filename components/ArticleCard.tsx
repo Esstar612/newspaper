@@ -2,6 +2,7 @@
 import { LABELS } from "@/lib/categories";
 import { relativeTime, truncate } from "@/lib/format";
 import { ArticleThumb } from "@/components/ArticleThumb";
+import { hasImage } from "@/lib/arrange";
 import { cn } from "@/components/ui";
 
 export type Article = {
@@ -108,11 +109,13 @@ export function ArticleCard({
 
     return (
         <article className="group relative flex flex-col overflow-hidden rounded-lg border border-line bg-surface transition-colors hover:border-line-strong">
-            <ArticleThumb
-                src={article.imageUrl}
-                className="aspect-[16/9]"
-                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            />
+            {hasImage(article) && (
+                <ArticleThumb
+                    src={article.imageUrl}
+                    className="aspect-[16/9]"
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                />
+            )}
             <div className="flex flex-1 flex-col p-4">
                 <Meta article={article} className="mb-2" />
                 <h3 className="font-serif text-xl font-semibold leading-snug text-ink transition-colors group-hover:text-accent">

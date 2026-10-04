@@ -26,6 +26,7 @@ export function seedArticles() {
     }
     const world = docs.find((d) => d.tags?.[0] === "world")!;
     world.title = "World rates story";
+    world.imageUrl = "";
     const business = docs.find((d) => d.tags?.[0] === "business")!;
     business.description = "Central bank holds rates steady";
     return docs;

@@ -2,6 +2,7 @@
 
 import { Fragment, useState, type FormEvent } from "react";
 import { LABELS } from "@/lib/categories";
+import { WHEN } from "@/lib/when";
 import { relativeTime, utf8Bytes } from "@/lib/format";
 import type { Answer, AskState, Thread } from "@/lib/useAsk";
 import { ArticleThumb } from "@/components/ArticleThumb";
@@ -129,6 +130,7 @@ export function AnswerCard({ state, category, onRetry, onClose, onFollowUp }: Pr
                     <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-accent">
                         <Icon name="ask" size={14} />
                         Summary answer · {LABELS[category] ?? category}
+                        {thread.when !== "any" && ` · ${WHEN[thread.when]}`}
                         {count > 1 && ` · ${count} questions`}
                     </p>
                     <button

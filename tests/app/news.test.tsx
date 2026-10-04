@@ -45,6 +45,7 @@ function serveAsk(body: object, status = 200) {
 }
 
 const box = () => screen.getByRole("combobox", { name: "Search headlines or ask a question" });
+const whenSelect = () => screen.getByRole("combobox", { name: "When" });
 const gridRequests = () => requests.filter((url) => url.searchParams.get("limit") === "20");
 
 beforeEach(() => {
@@ -153,6 +154,7 @@ describe("News page", () => {
         render(<NewsPage />);
 
         await screen.findByText("Story 01");
+        await user.selectOptions(whenSelect(), "Past week");
         await user.type(box(), "What did the bank do?{Enter}");
         expect(await screen.findByText("The bank held rates.")).toBeInTheDocument();
         await waitFor(() => expect(gridRequests().at(-1)!.searchParams.has("q")).toBe(false));
@@ -160,6 +162,7 @@ describe("News page", () => {
         expect(screen.queryByText(/Stories matching your question/)).not.toBeInTheDocument();
         expect(screen.queryByText(/No results/)).not.toBeInTheDocument();
         expect(gridRequests().map((u) => u.searchParams.get("q"))).toEqual([null, "What did the bank do?", null]);
+        expect(gridRequests().map((u) => u.searchParams.get("when"))).toEqual([null, "week", null]);
     });
 
     it("keeps the latest query's grid when an earlier one answers late", async () => {
@@ -637,6 +640,77 @@ describe("News page", () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it("asks within the chosen window, and keeps it for the keyword fallback and Load more", async () => {
+        const user = userEvent.setup();
+        params = new URLSearchParams("category=business");
+        serveNews({
+            first: { articles: makeArticles(3), nextCursor: null },
+            "rates:first": { articles: makeArticles(20, (i) => ({ title: `Match ${i}` })), nextCursor: "m1" },
+            "rates:m1": { articles: [makeArticle(21, { title: "Match 21" })], nextCursor: null },
+        });
+        const asked = serveAsk(answer("No recent articles match that question."));
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.selectOptions(whenSelect(), "Past week");
+        await user.type(box(), "rates{Enter}");
+        expect(await screen.findByText("Stories matching your question · 20")).toBeInTheDocument();
+        expect(asked).toEqual([{ q: "rates", category: "business", when: "week" }]);
+        expect(gridRequests().at(-1)!.searchParams.get("when")).toBe("week");
+        expect(screen.getByText("Summary answer · Business · Past week")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Load more" }));
+        await screen.findByText("Match 21");
+        expect(gridRequests().at(-1)!.searchParams.get("cursor")).toBe("m1");
+        expect(gridRequests().at(-1)!.searchParams.get("when")).toBe("week");
+    });
+
+    it("changes nothing on screen when the window changes under an open answer", async () => {
+        const user = userEvent.setup();
+        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        serveAsk(answer("The bank held rates.", relatedStories("Related one")));
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.type(box(), "What did the bank do?{Enter}");
+        await screen.findByText("Related one");
+        const before = requests.length;
+        await user.selectOptions(whenSelect(), "Past month");
+        expect(screen.getByText("The bank held rates.")).toBeInTheDocument();
+        expect(screen.getByText("Related one")).toBeInTheDocument();
+        expect(screen.getByText("Summary answer · Top Stories")).toBeInTheDocument();
+        expect(requests).toHaveLength(before);
+    });
+
+    it("keeps the chosen window across a section change", async () => {
+        const user = userEvent.setup();
+        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        const { rerender } = render(<NewsPage />);
+        await screen.findByText("Story 01");
+        await user.selectOptions(whenSelect(), "Past year");
+        params = new URLSearchParams("category=sports");
+        rerender(<NewsPage />);
+        await waitFor(() => expect(gridRequests().at(-1)!.searchParams.get("category")).toBe("sports"));
+        expect(whenSelect()).toHaveValue("year");
+    });
+
+    it("retries a failed first question with the window it was asked with", async () => {
+        const user = userEvent.setup();
+        params = new URLSearchParams("category=business");
+        serveNews({ first: { articles: makeArticles(3), nextCursor: null } });
+        serveAsk({ error: "The answer service is unavailable." }, 502);
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.selectOptions(whenSelect(), "Past week");
+        await user.type(box(), "What did the bank do?{Enter}");
+        await screen.findByText("Could not get an answer");
+        await user.selectOptions(whenSelect(), "Past month");
+        const asked = serveAsk(answer("The bank held rates."));
+        await user.click(screen.getByRole("button", { name: "Try again" }));
+        expect(await screen.findByText("The bank held rates.")).toBeInTheDocument();
+        expect(asked).toEqual([{ q: "What did the bank do?", category: "business", when: "week" }]);
     });
 
     it("shows the reason when the feed fails", async () => {

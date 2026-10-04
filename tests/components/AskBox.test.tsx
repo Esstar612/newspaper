@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import "../setup.dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { server } from "../msw";
 import { makeArticle } from "../fixtures/articles";
 import { AskBox } from "@/components/AskBox";
+import type { When } from "@/lib/when";
 
 const finished: string[] = [];
 
@@ -27,9 +28,9 @@ function serveMatches(titles: Record<string, string[]> = {}) {
     return requests;
 }
 
-function setup(category = "business", onSubmit = vi.fn()) {
+function setup(category = "business", onSubmit = vi.fn(), when: When = "any", onWhenChange = vi.fn()) {
     const user = userEvent.setup();
-    render(<AskBox category={category} onSubmit={onSubmit} debounceMs={0} />);
+    render(<AskBox category={category} onSubmit={onSubmit} debounceMs={0} when={when} onWhenChange={onWhenChange} />);
     const box = screen.getByRole("combobox", { name: "Search headlines or ask a question" });
     return { user, box, onSubmit };
 }
@@ -44,7 +45,7 @@ describe("AskBox", () => {
         await user.type(box, "What did the bank do?");
         expect(box).toHaveAttribute("aria-expanded", "true");
         expect(box).toHaveAttribute("aria-autocomplete", "list");
-        const options = screen.getAllByRole("option");
+        const options = within(screen.getByRole("listbox")).getAllByRole("option");
         expect(options[0]).toHaveTextContent("Ask: “What did the bank do?”");
         expect(options[0]).toHaveAttribute("aria-selected", "true");
         expect(box).toHaveAttribute("aria-activedescendant", options[0].id);
@@ -134,8 +135,8 @@ describe("AskBox", () => {
         try {
             const fetchSpy = vi.spyOn(globalThis, "fetch");
             const onSubmit = vi.fn();
-            render(<AskBox category="business" onSubmit={onSubmit} debounceMs={100} />);
-            const box = screen.getByRole("combobox");
+            render(<AskBox category="business" onSubmit={onSubmit} debounceMs={100} when="any" onWhenChange={vi.fn()} />);
+            const box = screen.getByRole("combobox", { name: "Search headlines or ask a question" });
             fireEvent.change(box, { target: { value: "rates" } });
             fireEvent.submit(box.closest("form")!);
             vi.advanceTimersByTime(1000);
@@ -171,7 +172,7 @@ describe("AskBox", () => {
         render(
             <>
                 <input aria-label="Other field" />
-                <AskBox category="business" onSubmit={vi.fn()} debounceMs={0} />
+                <AskBox category="business" onSubmit={vi.fn()} debounceMs={0} when="any" onWhenChange={vi.fn()} />
             </>
         );
         const other = screen.getByRole("textbox", { name: "Other field" });
@@ -189,5 +190,34 @@ describe("AskBox before any results", () => {
         await user.click(screen.getByRole("button", { name: "Ask" }));
         expect(onSubmit).toHaveBeenCalledWith("rates");
         await waitFor(() => expect(box).toHaveAttribute("aria-expanded", "false"));
+    });
+});
+
+describe("AskBox window", () => {
+    it("offers the four windows in a select named When", async () => {
+        serveMatches();
+        const onWhenChange = vi.fn();
+        const { user } = setup("business", vi.fn(), "any", onWhenChange);
+        const select = screen.getByRole("combobox", { name: "When" });
+        expect([...select.querySelectorAll("option")].map((o) => o.textContent)).toEqual(["Any time", "Past week", "Past month", "Past year"]);
+        expect(select).toHaveValue("any");
+        await user.selectOptions(select, "Past week");
+        expect(onWhenChange).toHaveBeenCalledWith("week");
+    });
+
+    it("asks for headline matches within the window", async () => {
+        const requests = serveMatches({ rates: ["Bank holds rates"] });
+        const { user, box } = setup("business", vi.fn(), "week");
+        await user.type(box, "rates");
+        await screen.findByRole("option", { name: /Bank holds rates/ });
+        expect(requests.at(-1)!.searchParams.get("when")).toBe("week");
+    });
+
+    it("sends no window for any time", async () => {
+        const requests = serveMatches({ rates: ["Bank holds rates"] });
+        const { user, box } = setup();
+        await user.type(box, "rates");
+        await screen.findByRole("option", { name: /Bank holds rates/ });
+        expect(requests.at(-1)!.searchParams.has("when")).toBe(false);
     });
 });

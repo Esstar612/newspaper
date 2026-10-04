@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
-import { MIN_KEEP, RETENTION_MS, planCleanup } from "@/lib/cleanup";
+import { MAX_ARTICLES, MIN_KEEP, RETENTION_DAYS, RETENTION_MS, planCleanup } from "@/lib/cleanup";
 import { cleanupSeries, runSeries, sendMetrics } from "@/lib/metrics";
 import { deleteVectors } from "@/lib/vectors";
 
@@ -24,12 +24,13 @@ export async function GET(req: NextRequest) {
         const cutoff = new Date(now.getTime() - RETENTION_MS);
 
         const totalBefore = await Article.countDocuments();
+        const expired = await Article.countDocuments({ createdAt: { $lt: cutoff } });
         const newestArticle = await Article.findOne()
             .sort({ createdAt: -1 })
             .select("createdAt")
             .lean();
 
-        const plan = planCleanup({ total: totalBefore, newestAt: newestArticle?.createdAt, now });
+        const plan = planCleanup({ total: totalBefore, expired, newestAt: newestArticle?.createdAt, now });
 
         if (plan.action === "skip") {
             await sendMetrics([
@@ -46,18 +47,16 @@ export async function GET(req: NextRequest) {
             });
         }
 
-        const expired = await Article.find({ createdAt: { $lt: cutoff } })
-            .sort({ createdAt: 1 })
-            .limit(plan.budget)
-            .select("_id")
-            .lean();
+        const doomed = plan.count
+            ? await Article.find().sort({ createdAt: 1 }).limit(plan.count).select("_id").lean()
+            : [];
 
-        const deleteResult = expired.length
-            ? await Article.deleteMany({ _id: { $in: expired.map((d) => d._id) } })
+        const deleteResult = doomed.length
+            ? await Article.deleteMany({ _id: { $in: doomed.map((d) => d._id) } })
             : { deletedCount: 0 };
 
         try {
-            await deleteVectors(expired.map((d) => String(d._id)));
+            await deleteVectors(doomed.map((d) => String(d._id)));
         } catch (e) {
             console.error(`Pinecone delete failed: ${e instanceof Error ? e.message : String(e)}`);
         }
@@ -88,7 +87,8 @@ export async function GET(req: NextRequest) {
                 currentArticles: totalAfter,
                 oldestArticle: oldestArticle?.createdAt,
                 newestArticle: newestArticle?.createdAt,
-                retentionDays: 7,
+                retentionDays: RETENTION_DAYS,
+                maxArticles: MAX_ARTICLES,
             },
         });
     } catch (e: unknown) {

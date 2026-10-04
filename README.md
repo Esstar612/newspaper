@@ -239,10 +239,15 @@ function with one outbound IP, which is what the data provider's licence require
 (see [Architecture notes](#-architecture-notes)).
 
 ### Database cleanup (`0 3 * * *`)
-Deletes articles older than seven days, but never at the cost of emptying the
-site. It holds if nothing has been ingested for 48 hours, and never drops below a
-120-article floor. Cron delivery is best-effort with no retries, so a naive age
-cutoff would empty the database within a week of ingest breaking.
+Keeps a year of news, so Ask can answer about older stories, and deletes articles
+past that (with their vectors), never more than 100,000 kept in total. At the
+measured 121 to 208 new articles a day, a year is under a fifth of MongoDB Atlas's
+0.5 GB free tier, and the ceiling caps it at about a quarter.
+
+It never empties the site: it holds if nothing has been ingested for 48 hours, and
+never drops below a 120-article floor. Cron delivery is best-effort with no
+retries, so a naive age cutoff would empty the database one retention window after
+ingest broke.
 
 ## 📊 API Usage & Costs
 
@@ -504,9 +509,9 @@ paid calls), aborts the previous one, and drops any reply that a newer question 
 a section change has replaced.
 
 **Cleanup can refuse to run.** Retention and ingestion are separate jobs, and
-cron delivery is best-effort. A plain age cutoff would empty the database within
-a week of ingest breaking, so cleanup holds when nothing is arriving and never
-drops below a floor.
+cron delivery is best-effort. A plain age cutoff would empty the database one
+retention window after ingest broke, so cleanup holds when nothing is arriving and
+never drops below a floor.
 
 ---
 
@@ -533,7 +538,8 @@ See [open issues](https://github.com/Esstar612/newspaper/issues) for a full list
 - [ ] Bookmarking and reading lists
 - [ ] Email notifications for breaking news
 - [ ] Mobile app (React Native)
-- [ ] Keep article vectors past the 7-day retention, so Ask can search an archive
+- [x] Keep a year of news, so Ask can search an archive
+- [ ] Recency-aware retrieval for "what is the latest on X"
 - [ ] Social sharing features
 - [ ] RSS feed generation
 - [ ] Multi-language support

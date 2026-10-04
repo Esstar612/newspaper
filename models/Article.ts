@@ -17,6 +17,7 @@ const ArticleSchema = new Schema(
 
 ArticleSchema.index({ url: 1 }, { unique: true });
 ArticleSchema.index({ publishedAt: -1 });
+ArticleSchema.index({ createdAt: 1 });
 ArticleSchema.index({ source: 1, publishedAt: -1 });
 ArticleSchema.index({ tags: 1, publishedAt: -1 });
 

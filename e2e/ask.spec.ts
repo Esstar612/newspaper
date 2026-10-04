@@ -104,3 +104,19 @@ test("asks a follow-up and keeps the thread", async ({ page }) => {
         history: [{ q: "rates", answer: "Business story 01 was the top story and a central bank held rates." }],
     });
 });
+
+test("asks within a chosen window and names it on the answer", async ({ page }) => {
+    const sent: unknown[] = [];
+    await page.route("**/api/ask", async (route) => {
+        sent.push(route.request().postDataJSON());
+        await route.fulfill({ json: answer });
+    });
+    await page.goto("/news?category=business");
+    await page.getByRole("combobox", { name: "When" }).selectOption("week");
+    const box = page.getByRole("combobox", { name: "Search headlines or ask a question" });
+    await box.fill("What happened in business?");
+    await box.press("Escape");
+    await box.press("Enter");
+    await expect(page.getByText("Summary answer · Business · Past week")).toBeVisible();
+    expect(sent).toEqual([{ q: "What happened in business?", category: "business", when: "week" }]);
+});

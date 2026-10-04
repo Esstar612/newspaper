@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { connectDB } from "@/lib/db";
 import { Article } from "@/models/Article";
 import { GENERAL } from "@/lib/categories";
+import { isWhen, sinceFor } from "@/lib/when";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,6 +59,10 @@ export async function GET(req: Request) {
 
         // "general" means every category, so it applies no tag filter.
         if (category && category !== GENERAL) conditions.push({ tags: category });
+
+        const when = searchParams.get("when");
+        const since = isWhen(when) ? sinceFor(when, new Date()) : undefined;
+        if (since) conditions.push({ publishedAt: { $gte: since } });
 
         if (q) {
             const regex = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

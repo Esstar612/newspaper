@@ -6,9 +6,14 @@ import { server } from "../msw";
 import type { Series } from "@/lib/metrics";
 
 const db = vi.hoisted(() => {
-    const chain = (value: () => unknown) => {
+    const queries: Array<[string, unknown]> = [];
+    const chain = (value: () => unknown, record = false) => {
         const link: Record<string, unknown> = {};
-        for (const m of ["sort", "select", "limit"]) link[m] = () => link;
+        for (const m of ["sort", "select", "limit"])
+            link[m] = (arg: unknown) => {
+                if (record) queries.push([m, arg]);
+                return link;
+            };
         link.lean = () => Promise.resolve(value());
         return link;
     };
@@ -21,6 +26,7 @@ const db = vi.hoisted(() => {
         candleBulkWrite: vi.fn(),
         deleteMany: vi.fn(),
         chain,
+        queries,
     };
 });
 
@@ -28,8 +34,14 @@ vi.mock("@/lib/db", () => ({ connectDB: db.connectDB }));
 vi.mock("@/models/Article", () => ({
     Article: {
         findOne: () => db.chain(() => db.newest),
-        find: () => db.chain(() => db.expired),
-        countDocuments: () => Promise.resolve(db.counts.shift() ?? 0),
+        find: (filter: unknown) => {
+            db.queries.push(["find", filter ?? {}]);
+            return db.chain(() => db.expired, true);
+        },
+        countDocuments: (filter: unknown) => {
+            db.queries.push(["countDocuments", filter ?? {}]);
+            return Promise.resolve(db.counts.shift() ?? 0);
+        },
         bulkWrite: db.articleBulkWrite,
         deleteMany: db.deleteMany,
     },
@@ -64,6 +76,7 @@ beforeEach(() => {
     db.newest = null;
     db.counts = [];
     db.expired = [];
+    db.queries.length = 0;
     db.articleBulkWrite.mockReset().mockResolvedValue({ upsertedCount: 7, matchedCount: 3, modifiedCount: 1 });
     db.candleBulkWrite.mockReset().mockResolvedValue({ upsertedCount: 0, matchedCount: 9, modifiedCount: 9 });
     db.deleteMany.mockReset().mockResolvedValue({ deletedCount: 0 });
@@ -194,14 +207,59 @@ describe("refresh-candles", () => {
 describe("cleanup-old-news", () => {
     it("reports deletions and the new total", async () => {
         db.newest = { createdAt: new Date() };
-        db.counts = [400, 0, 380];
+        db.counts = [400, 20, 0, 380];
         db.expired = Array.from({ length: 20 }, (_, i) => ({ _id: `id${i}` }));
         db.deleteMany.mockResolvedValue({ deletedCount: 20 });
         const res = await cleanup(request("/api/cron/cleanup-old-news"));
-        expect((await res.json()).status).toBe("success");
+        const body = await res.json();
+        expect(body.status).toBe("success");
+        expect(body.database).toMatchObject({ retentionDays: 365, maxArticles: 100_000 });
         expect(runTags()).toEqual([["env:production", "job:cleanup-old-news", "status:success"]]);
         expect(gauge("newspaper.cleanup.deleted")).toBe(20);
         expect(gauge("newspaper.articles.total")).toBe(380);
+    });
+
+    it("counts the expired articles before planning, then deletes the oldest ones it planned", async () => {
+        db.newest = { createdAt: new Date() };
+        db.counts = [400, 20, 0, 380];
+        db.expired = Array.from({ length: 20 }, (_, i) => ({ _id: `id${i}` }));
+        db.deleteMany.mockResolvedValue({ deletedCount: 20 });
+        await cleanup(request("/api/cron/cleanup-old-news"));
+        const [first, second, third, ...rest] = db.queries;
+        expect(first).toEqual(["countDocuments", {}]);
+        expect(second[0]).toBe("countDocuments");
+        const cutoff = (second[1] as { createdAt: { $lt: Date } }).createdAt.$lt;
+        expect(Date.now() - cutoff.getTime()).toBeGreaterThanOrEqual(365 * 24 * 60 * 60 * 1000);
+        expect(Date.now() - cutoff.getTime()).toBeLessThan(365 * 24 * 60 * 60 * 1000 + 60_000);
+        expect(third).toEqual(["find", {}]);
+        expect(rest.slice(0, 2)).toEqual([
+            ["sort", { createdAt: 1 }],
+            ["limit", 20],
+        ]);
+        expect(db.deleteMany).toHaveBeenCalledWith({ _id: { $in: db.expired.map((d) => d._id) } });
+    });
+
+    it("deletes nothing, and asks Pinecone for nothing, on a night with nothing to delete", async () => {
+        vi.stubEnv("PINECONE_API_KEY", "test-key");
+        vi.stubEnv("PINECONE_INDEX_HOST", "newspaper-articles-test.svc.pinecone.io");
+        const deleted: string[][] = [];
+        server.use(
+            http.post("https://newspaper-articles-test.svc.pinecone.io/vectors/delete", async ({ request }) => {
+                deleted.push(((await request.json()) as { ids: string[] }).ids);
+                return HttpResponse.json({});
+            })
+        );
+        db.newest = { createdAt: new Date() };
+        db.counts = [400, 0, 0, 400];
+        db.expired = Array.from({ length: 400 }, (_, i) => ({ _id: `id${i}` }));
+        const res = await cleanup(request("/api/cron/cleanup-old-news"));
+        const body = await res.json();
+        expect(body.status).toBe("success");
+        expect(body.cleanup.deleted).toBe(0);
+        expect(db.queries.some(([op]) => op === "find")).toBe(false);
+        expect(db.deleteMany).not.toHaveBeenCalled();
+        expect(deleted).toEqual([]);
+        expect(gauge("newspaper.cleanup.deleted")).toBe(0);
     });
 
     it("deletes the removed articles' vectors", async () => {
@@ -215,7 +273,7 @@ describe("cleanup-old-news", () => {
             })
         );
         db.newest = { createdAt: new Date() };
-        db.counts = [400, 0, 380];
+        db.counts = [400, 20, 0, 380];
         db.expired = Array.from({ length: 3 }, (_, i) => ({ _id: `id${i}` }));
         db.deleteMany.mockResolvedValue({ deletedCount: 3 });
         await cleanup(request("/api/cron/cleanup-old-news"));
@@ -231,7 +289,7 @@ describe("cleanup-old-news", () => {
             )
         );
         db.newest = { createdAt: new Date() };
-        db.counts = [400, 0, 380];
+        db.counts = [400, 20, 0, 380];
         db.expired = [{ _id: "id0" }];
         db.deleteMany.mockResolvedValue({ deletedCount: 1 });
         const res = await cleanup(request("/api/cron/cleanup-old-news"));

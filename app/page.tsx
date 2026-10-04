@@ -8,6 +8,7 @@
 // Server Component: reads Mongo directly and shares the cached bulk quote fetch,
 // so the front page ships no client JS of its own.
 import Link from "next/link";
+import { arrange } from "@/lib/arrange";
 import { connectDB } from "@/lib/db";
 import { Article as ArticleModel } from "@/models/Article";
 import { ArticleCard, type Article } from "@/components/ArticleCard";
@@ -45,9 +46,7 @@ export default async function HomePage() {
     // renders news without waiting on a third party.
     const articles = await getArticles();
 
-    const [lead, ...rest] = articles;
-    const featured = rest.slice(0, 9);
-    const more = rest.slice(9);
+    const { lead, featured, brief: more } = arrange(articles);
 
     return (
         <div className="min-h-screen">

@@ -29,9 +29,18 @@ describe("ArticleCard", () => {
         expect(container.querySelector("img")).toBeNull();
     });
 
-    it("uses the placeholder when there is no image", () => {
-        const { container } = render(<ArticleCard article={makeArticle(2)} />);
-        expect(container.querySelector("img")).toHaveAttribute("src", PLACEHOLDER_IMAGE);
+    it("renders a feature card without a picture as text only", () => {
+        const plain = makeArticle(2, { imageUrl: "" });
+        const { container } = render(<ArticleCard article={plain} variant="feature" />);
+        expect(container.querySelector("img")).toBeNull();
+        expect(screen.getByRole("link", { name: plain.title })).toHaveAttribute("href", plain.url);
+        expect(screen.getByText(plain.source)).toBeInTheDocument();
+        expect(screen.getByText(plain.description!)).toBeInTheDocument();
+    });
+
+    it("treats a blank image address as no picture", () => {
+        const { container } = render(<ArticleCard article={makeArticle(2, { imageUrl: "   " })} variant="feature" />);
+        expect(container.querySelector("img")).toBeNull();
     });
 
     it("swaps a broken image for the placeholder", () => {

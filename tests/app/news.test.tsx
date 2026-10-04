@@ -713,6 +713,31 @@ describe("News page", () => {
         expect(asked).toEqual([{ q: "What did the bank do?", category: "business", when: "week" }]);
     });
 
+    it("never leads with a story that has no picture, and sends it to In brief", async () => {
+        serveNews({ first: { articles: [makeArticle(1, { imageUrl: "", title: "Pictureless news" }), ...makeArticles(14).slice(1)], nextCursor: null } });
+        const { container } = render(<NewsPage />);
+
+        await screen.findByText("Story 02");
+        const lead = container.querySelector("article");
+        expect(lead).toHaveTextContent("Story 02");
+        const brief = screen.getByRole("region", { name: "In brief" });
+        expect(within(brief).getByText("Pictureless news")).toBeInTheDocument();
+    });
+
+    it("shows a search match without a picture as a text-only card", async () => {
+        const user = userEvent.setup();
+        serveNews({
+            first: { articles: makeArticles(3), nextCursor: null },
+            "AI:first": { articles: [makeArticle(1, { imageUrl: "", title: "AI without a picture" })], nextCursor: null },
+        });
+        render(<NewsPage />);
+
+        await screen.findByText("Story 01");
+        await user.type(box(), "AI{Enter}");
+        const card = (await screen.findByText("AI without a picture")).closest("article")!;
+        expect(card.querySelector("img")).toBeNull();
+    });
+
     it("shows the reason when the feed fails", async () => {
         server.use(http.get("*/api/news", () => HttpResponse.json({ articles: [], error: "db down" }, { status: 500 })));
         render(<NewsPage />);

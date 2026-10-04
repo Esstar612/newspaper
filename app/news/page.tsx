@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { arrange } from "@/lib/arrange";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CATEGORIES, GENERAL, LABELS, isCategory } from "@/lib/categories";
 import { ArticleCard, type Article } from "@/components/ArticleCard";
@@ -283,9 +284,9 @@ function NewsPageInner() {
     // Hierarchy: one lead, then a standard grid, then a compact tail. A page of 20
     // equally-weighted tiles reads as a wall; a front page leads with something.
     const searching = Boolean(searchQuery);
-    const [lead, ...rest] = articles;
-    const featured = searching ? articles : rest.slice(0, 9);
-    const compact = searching ? [] : rest.slice(9);
+    const { lead, featured, brief: compact } = searching
+        ? { lead: undefined, featured: articles, brief: [] }
+        : arrange(articles);
     const sectionLabel = LABELS[activeCategory] ?? activeCategory;
     const firstTurn = askState.status === "idle" ? undefined : askState.thread.turns[0];
     const related = showRelated && firstTurn ? firstTurn.answer.related : [];

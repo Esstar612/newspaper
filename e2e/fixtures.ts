@@ -1,5 +1,6 @@
 import { test as base, expect } from "@playwright/test";
 import { makeQuote } from "../tests/fixtures/quotes";
+import { PIXEL_PNG_BASE64 } from "../tests/fixtures/articles";
 import { ORIGIN } from "../playwright.config";
 
 export const QUOTES = [
@@ -37,10 +38,7 @@ export const PLACES = [
     { name: "London", country: "CA", state: "Ontario", lat: 42.9832, lon: -81.2433 },
 ];
 
-const PIXEL = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
-    "base64"
-);
+const PIXEL = Buffer.from(PIXEL_PNG_BASE64, "base64");
 
 export const test = base.extend<{ offOrigin: string[] }>({
     offOrigin: [

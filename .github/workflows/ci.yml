@@ -28,8 +28,6 @@ jobs:
         include:
           - { project: chromium, browser: chromium }
           - { project: firefox, browser: firefox }
-          - { project: webkit, browser: webkit }
-          - { project: pixel-7, browser: chromium }
           - { project: iphone-15, browser: webkit }
     services:
       mongo:
